@@ -8,7 +8,7 @@ import discord
 from discord.ext import commands
 from os import listdir
 
-import config
+import config  # TODO: Use virtual env for heroku config vars
 
 
 class HelpCommand(commands.HelpCommand):
@@ -21,9 +21,7 @@ class HelpCommand(commands.HelpCommand):
         embed.set_author(name=f"{bot.user.name}'s modules", icon_url=bot.user.avatar_url)
         for cog in mapping:
             if cog:
-                name = cog.qualified_name
-                embed.add_field(name=name, value=f"`-help {name}`", inline=True)
-
+                embed.add_field(name=cog.qualified_name, value=f"`-help {cog.qualified_name}`", inline=True)
         await self.get_destination().send(embed=embed)
 
     async def send_cog_help(self, cog):
@@ -32,25 +30,25 @@ class HelpCommand(commands.HelpCommand):
         for command in cog.get_commands():
             if not command.hidden:
                 embed.add_field(name=f"`{command.brief}`", value=command.description, inline=False)
-
         await self.get_destination().send(embed=embed)
 
     async def send_command_help(self, command):
         """Sends a detailed description of the command"""
-        if not command.hidden:
-            embed = discord.Embed(color=bot.ColorDefault)
-            embed.add_field(name=f"Usage of {command.name} command:", value=f"`{bot.command_prefix}{command.brief}`")
+        embed = discord.Embed(color=bot.ColorDefault)
+        embed.add_field(name=f"Usage of {command.name} command:", value=f"`{bot.command_prefix}{command.brief}`")
+        embed.set_footer(text="Enabled" if command.enabled else "Disabled")
+        if command.usage:
+            arguments = ''
+            col_width = max(len(row[0]) for row in command.usage)
+            for row in command.usage:
+                arguments += f"`{'|'.join(word.rjust(col_width) for word in row[:-1])}` {row[2]}\n"
+            embed.add_field(name=f"Arguments:", value=arguments, inline=False)
+        await self.get_destination().send(embed=embed)
 
-            if command.usage:
-                arguments = ''
-                col_width = max(len(row[0]) for row in command.usage)
-                for row in command.usage:
-                    arguments += f"`{'|'.join(word.rjust(col_width) for word in row[:-1])}` {row[2]}\n"
-                embed.add_field(name=f"Arguments:", value=arguments, inline=False)
-
-            embed.set_footer(text="Enabled" if command.enabled else "Disabled")
-
-            await self.get_destination().send(embed=embed)
+    async def send_error_message(self, error):
+        """Sends an error message if command doesn't exist"""
+        embed = discord.Embed(title="Something went wrong", description=f"🚫 Nothing found", color=bot.ColorError)
+        await self.get_destination().send(embed=embed)
 
 
 token = config.token
@@ -77,11 +75,7 @@ async def on_ready():
 
 @bot.event
 async def on_command_error(ctx, error):
-    """
-    Error handler
-    Sends an error message to the context channel
-    Processes: MemberNotFound, CommandNotFound, UserInputError, MissingPermissions, CommandOnCooldown
-    """
+    """Sends an error message to the context channel"""
     if hasattr(ctx.command, 'on_error'):
         return
 
@@ -103,7 +97,7 @@ async def on_command_error(ctx, error):
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.BadArgument):
-        embed.description += error.args[0]
+        embed.description += error.args[0].replace('"', '**').replace('.', '')
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.MemberNotFound):
@@ -127,8 +121,7 @@ async def on_command_error(ctx, error):
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.MissingPermissions):
-        missing = ', '.join([perm.replace('_', ' ').replace('guild', 'server').title() for perm in error.missing_perms])
-        embed.description += f"You must have **{missing}** permission(s) to run this command"
+        embed.description += f"You don't have permission to run this command"
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.ExtensionNotFound):
@@ -143,7 +136,7 @@ async def on_command_error(ctx, error):
 
 
 @bot.event
-async def on_member_join(member):
+async def on_member_join(member: discord.Member):
     """Sends a greeting when someone joins a server or informs the guild owner about the absence of a system channel"""
     if member.guild.system_channel:
         await member.guild.system_channel.send(f"{member.mention} has **joined** a server")
@@ -152,7 +145,7 @@ async def on_member_join(member):
 
 
 @bot.event
-async def on_member_remove(member):
+async def on_member_remove(member: discord.Member):
     """Informs that the user has removed from the server (Including ban/kick)"""
     if member.guild.system_channel:
         await member.guild.system_channel.send(f"{member.mention} has **left** a server")
