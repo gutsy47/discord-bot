@@ -273,6 +273,31 @@ class Moderator(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(
+        name="toggle",
+        brief="toggle [command]",
+        usage=[
+            ["command", "required", "Just a command name"]
+        ],
+        description="Turns command on/off"
+    )
+    @commands.has_permissions(administrator=True)
+    async def toggle(self, ctx, command):
+        """Turns command on/off
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param command: str - Command object to toggle (error if this command, will be changed to commands.Command)
+        """
+        command = self.bot.get_command(command)
+        if command == ctx.command:
+            embed = discord.Embed(title="Something went wrong", color=self.bot.ColorError)
+            embed.description = "🚫That's not good idea"
+        else:
+            command.enabled = not command.enabled
+            ternary = "Enabled" if command.enabled else "Disabled"
+            embed = discord.Embed(description=f"{ternary} **{command.qualified_name}**", color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
+
+    @commands.command(
         name="ping",
         brief="ping",
         description="Returns delay time"
