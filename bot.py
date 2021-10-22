@@ -1,14 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-TODO: Error handlers in HelpCommand()
-TODO: Logging
-TODO: Send some info about new member (Embeds may be used)
-"""
 import discord
 from discord.ext import commands
-from os import listdir
-
-import config  # TODO: Use virtual env for heroku config vars
+import os
 
 
 class HelpCommand(commands.HelpCommand):
@@ -51,19 +44,19 @@ class HelpCommand(commands.HelpCommand):
         await self.get_destination().send(embed=embed)
 
 
-token = config.token
-prefix = config.prefix
+token = os.environ['TOKEN']
+prefix = os.environ['COMMAND_PREFIX']
 intents = discord.Intents.default()
 intents.members = True
 
 bot = commands.Bot(command_prefix=prefix, help_command=HelpCommand(), case_insensitive=True, intents=intents)
 
-bot.ColorDefault = config.color_default
-bot.ColorError = config.color_error
-bot.BannedGuildInvite = config.banned_guild_invite
-bot.HomeworkID = config.homework_category_id
-bot.ScheduleID = config.schedule_channel_id
-bot.ScheduleURL = config.schedule_url
+bot.ColorDefault = int(os.environ['COLOR_DEFAULT'], base=16)
+bot.ColorError = int(os.environ['COLOR_ERROR'], base=16)
+bot.BannedGuildInvite = os.environ['BANNED_GUILD_INVITE']
+bot.HomeworkID = int(os.environ['HOMEWORK_CATEGORY_ID'])
+bot.ScheduleID = int(os.environ['SCHEDULE_CHANNEL_ID'])
+bot.ScheduleURL = os.environ['SCHEDULE_URL']
 
 
 @bot.event
@@ -150,7 +143,7 @@ async def on_member_remove(member: discord.Member):
     if member.guild.system_channel:
         await member.guild.system_channel.send(f"{member.mention} has **left** a server")
 
-for filename in listdir('./cogs'):
+for filename in os.listdir('./cogs'):
     if filename.endswith('.py'):
         bot.load_extension(f'cogs.{filename[:-3]}')
 
