@@ -27,9 +27,9 @@ class Moderator(commands.Cog):
         message: discord.Message = reaction.message
         channel: discord.TextChannel = message.channel
 
-        if (member == self.bot.user) or (not message.embeds):
+        if message.author.id != self.bot.user.id or member == self.bot.user:
             return
-        if reaction.count > 1 and message.author.id == self.bot.user.id:
+        if reaction.count > 1:
             await reaction.remove(member)
 
         try:
@@ -43,32 +43,36 @@ class Moderator(commands.Cog):
 
         has_permissions = {
             "banned": member.guild_permissions.ban_members,
-            "muted": member.guild_permissions.mute_members
+            "muted": member.guild_permissions.manage_roles
         }
         if has_permissions[penalty]:
             name, discriminator = message.embeds[0].author.name.split()[-3].split('#')
-            target = get(message.guild.members, name=name, discriminator=discriminator)
             embed = discord.Embed(color=self.bot.ColorDefault)
-            await message.remove_reaction(emoji="↩", member=self.bot.user)
-            if penalty == "banned" and target in channel.guild.bans():
-                await message.guild.unban(target)
-                embed.set_author(name=f"{target} was unbanned", icon_url=f"{target.avatar_url}")
-                await channel.send(embed=embed)
+            if penalty == "banned":
+                banned_users = [entry.user for entry in await channel.guild.bans()]
+                target = get(banned_users, name=name, discriminator=discriminator)
                 if target in self.bot.get_all_members():
                     invite_link = await channel.create_invite(max_uses=1)
                     embed_invite = discord.Embed(
                         title=f"You have been unbanned from {channel.guild}",
                         description=f"Hey look! I have a onetime invite for you ([Click here!]({invite_link}))",
-                        color=self.bot.ColorDefault
+                        color=self.bot.ColorDefault,
                     )
                     embed_invite.set_footer(text=str(member), icon_url=member.avatar_url)
                     await target.send(embed=embed_invite)
+                else:
+                    embed.set_footer(text="Failed to send an invite")
+                embed.set_author(name=f"{target} was unbanned", icon_url=f"{target.avatar_url}")
+                await message.guild.unban(target)
+                await channel.send(embed=embed)
             elif penalty == "muted":
+                target = get(channel.guild.members, name=name, discriminator=discriminator)
                 muted_role = get(message.guild.roles, name='muted')
                 await target.remove_roles(muted_role)
                 embed.set_author(name=f"{target} was unmuted", icon_url=f"{target.avatar_url}")
                 await channel.send(embed=embed)
 
+            await message.remove_reaction(emoji="↩", member=self.bot.user)
             await message.add_reaction("✅")
 
     @commands.command(
@@ -89,9 +93,7 @@ class Moderator(commands.Cog):
         :param member: discord.Member - Guild member (error if not in it)
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
         """
-        if member.guild_permissions.administrator:
-            raise commands.MissingRole
-        if ctx.author.top_role <= member.top_role:
+        if member.guild_permissions.administrator or ctx.author.top_role <= member.top_role:
             raise commands.MissingRole
 
         embed = discord.Embed(description=f"**Reason:** {reason}", color=self.bot.ColorDefault)
@@ -183,7 +185,7 @@ class Moderator(commands.Cog):
         ],
         description="Mute a member in the server"
     )
-    @commands.has_permissions(mute_members=True)
+    @commands.has_permissions(manage_roles=True)
     @commands.guild_only()
     async def mute(self, ctx, member: discord.Member, *, reason: str = "Not specified"):
         """Mute a member in the server
@@ -215,7 +217,7 @@ class Moderator(commands.Cog):
         ],
         description="Unmute a member from the server"
     )
-    @commands.has_permissions(mute_members=True)
+    @commands.has_permissions(manage_roles=True)
     @commands.guild_only()
     async def unmute(self, ctx, member: discord.Member):
         """Unmute a member from the server
