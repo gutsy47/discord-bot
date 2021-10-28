@@ -28,15 +28,9 @@ class School(commands.Cog):
 
     async def get_homework(self, date: datetime):
         """Returns homework for a given date or ValueError if format is wrong
-        Format of homework: [{
-            name: str - lesson name,
-            content: str - homework text (can be empty),
-            files: list - homework files (can be empty list),
-            source: str - link to the original message
-        }, {...}]
 
         :param date: datetime - DateTime object
-        :return: dict(homework) or commands.BadArgument(Format error), str(date)
+        :return: dict - [{name: str, content: str, files: list, source: str}, ]
         """
         lessons = {
             '📙physics': 'Физика', '📙maths': 'Математика', '📙ict': 'Информатика',
@@ -63,38 +57,42 @@ class School(commands.Cog):
     async def get_schedule(self, date: datetime, course: str):
         """Returns the timetable from the school website
 
-        :param date: str - The date for which you need to get the schedule (format: DD.MM.YY)
+        :param date: datetime - The date for which you need to get the schedule
         :param course: str - School course to be returned
-        :return: Table
+        :return: dict - {course: [lesson1, lesson2], } or commands.BadArgument
         """
         # Argument error handler
-        check = ('5а', '5б', '6а', '6б', '7аs', '7б', '8а', '8б', '9а', '9б', '10м', '10х', '10э', '11м', '11х', '11э')
         if date.weekday() > 4:
             return commands.BadArgument("No lessons on weekends")
+        today = datetime.today()
+        if (date.month not in [today.month, today.month + 1]) or (date.year != today.year):
+            return commands.BadArgument("Schedule not posted for the selected date")
+        check = ('5а', '5б', '6а', '6б', '7аs', '7б', '8а', '8б', '9а', '9б', '10м', '10х', '10э', '11м', '11х', '11э')
         if course not in check:
             return commands.BadArgument("Incorrect course")
 
+        # Get soup
         response = requests.get(self.bot.ScheduleURL)
         soup = BeautifulSoup(response.text, 'lxml')
 
-        tables = soup.find_all('tbody')
+        # Get dates
         dates = [h2.get_text().split()[-2] for h2 in soup.find_all('h2') if "Расписание" in h2.get_text()]
         if str(date.day) not in dates:
             return commands.BadArgument("Schedule not posted for the selected date")
 
-        # TODO: Соединить две таблицы и обработать (пропуская создание content)
-        content = {}  # {day: [table, table]}
-        for index, header in enumerate(dates):
-            day = header
-            content[day] = [tables[index*2], tables[index*2 + 1]]
+        # Get schedules in HTML format for date
+        tables = soup.find_all('tbody')
+        pos = dates.index(str(date.day))
+        tables = [tables[pos*2], tables[pos*2 + 1]]
 
-        tables = []
-        for table in content[str(date.day)]:
+        # Get schedule in dict format from tables
+        schedule = {}
+        for table in tables:
             new_table = []
             for row in table:  # Create table with replaced colspans
                 if isinstance(row, bs4.element.Tag):  # There are NavigableStrings in rows
                     new_row = []
-                    for index, col in enumerate(row):
+                    for col in row:
                         if isinstance(col, bs4.element.Tag):  # There are NavigableStrings in cols
                             new_row.append(col.get_text().replace('\n', '').replace('\xa0', ''))
                             if 'colspan' in col.attrs:  # Replace all cols with colspan
@@ -102,13 +100,10 @@ class School(commands.Cog):
                                     new_row.append(col.get_text().replace('\n', '').replace('\xa0', ''))
                     new_table.append(new_row)
             new_table = [[new_table[j][i] for j in range(len(new_table))] for i in range(len(new_table[0]))]  # rot90
-            tables.append(new_table)
-
-        schedule = {}
-        for table in tables:  # Reformat to {course: [lessons]}
-            for row in table[1:]:
+            for row in new_table[1:]:
                 schedule[row[0]] = [lesson.capitalize() for lesson in row[2:]]
-        return schedule[course] if course else schedule
+
+        return schedule[course]
 
     @commands.Cog.listener()
     async def on_ready(self):
