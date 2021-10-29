@@ -3,7 +3,8 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
-import json
+import gspread
+import os
 import requests
 import bs4
 from bs4 import BeautifulSoup
@@ -16,6 +17,20 @@ class School(commands.Cog):
     """
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        credentials = {
+            "type": "service_account",
+            "project_id": os.environ['GOOGLE_PROJECT_ID'],
+            "private_key_id": os.environ["GOOGLE_PRIVATE_KEY_ID"],
+            "private_key": os.environ["GOOGLE_PRIVATE_KEY"].replace('\\n', '\n'),
+            "client_email": os.environ["GOOGLE_CLIENT_EMAIL"],
+            "client_id": os.environ["GOOGLE_CLIENT_ID"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.environ['GOOGLE_CLIENT_X509_CERT_URL']
+        }
+        service_account = gspread.service_account_from_dict(credentials)
+        self.spreadsheet = service_account.open("Schedules")
 
     @staticmethod
     async def date_format(date: datetime):
@@ -26,8 +41,103 @@ class School(commands.Cog):
         }
         return week[datetime.strftime(date, '%a')] + datetime.strftime(date, ' %d.%m.%y')
 
+    async def update_db(self, date: datetime, schedule: dict = None, homework: list = None, format: bool = False):
+        """Sends data to google sheets. Formats if specified
+
+        :param date: datetime - DateTime object, sheet names is dates
+        :param schedule: dict - Schedule with the same style as in get_schedule.return (or None)
+        :param homework: list - Homework with the same style as in get_homework.return (or None)
+        :param format: bool - Boolean value indicating the need to update the table style
+        """
+        # Get worksheet object from opened spreadsheet
+        date = datetime.strftime(date, '%d.%m.%y')
+        try:
+            worksheet = self.spreadsheet.add_worksheet(title=date, rows='25', cols='10')
+        except gspread.exceptions.APIError:
+            worksheet = self.spreadsheet.worksheet(title=date)
+
+        # Update schedule
+        if schedule:
+            worksheet.update('A1:J1', [['Course', 1, 2, 3, 4, 5, 6, 7, 8, 9]])  # Header
+            worksheet.update('A2:J17', [[key] + value for key, value in schedule.items()])  # Content
+
+        # Update homework
+        if homework:
+            worksheet.update('A18:D18', [['Name', 'Content', 'Files', 'Source']])  # Header
+            rows = []
+            for item in homework:
+                item['content'] = item['content'].replace('\n', '\\n')
+                item['files'] = ', '.join(item['files'])
+                rows.append(list(item.values()))
+            worksheet.update('A19:D25', rows)  # Content
+
+        # Set worksheet style
+        if format:
+            worksheet.format('A1:J25', {'wrapStrategy': 'CLIP'})  # Wrapping style for the whole table
+            for cords in ('B2:J17', 'B19:D25'):  # Contents' borders
+                worksheet.format(cords, {
+                    'textFormat': {'fontSize': 9},
+                    'borders': {
+                        'top': {'style': 'SOLID'},
+                        'bottom': {'style': 'SOLID'},
+                        'left': {'style': 'SOLID'},
+                        'right': {'style': 'SOLID'}
+                    }
+                })
+            for cords in ('A1:J1', 'A18:D18', 'A1:A25'):  # Headers' borders
+                worksheet.format(cords, {
+                    'borders': {
+                        'top': {'style': 'SOLID', 'width': 2},
+                        'bottom': {'style': 'SOLID', 'width': 2},
+                        'left': {'style': 'SOLID', 'width': 2},
+                        'right': {'style': 'SOLID', 'width': 2}
+                    },
+                    'horizontalAlignment': 'RIGHT',
+                    'textFormat': {'bold': True}
+                })
+            for cords in ('A1:J1', 'A18:D18'):  # Top headers' text style
+                worksheet.format(cords, {'horizontalAlignment': 'CENTER', 'textFormat': {'fontSize': 12}})
+
+    async def download_db(self, date: datetime, table: bool = False, hw: bool = False):
+        """Returns homework from google sheets
+
+        :param date: datetime - DateTime object, sheet names is dates
+        :param table: bool - Boolean value indicating the need to download homework
+        :param hw: bool - Boolean value indicating the need to download homework
+        :return: schedule for course, homework or one of this
+        """
+        # Get worksheet object from opened spreadsheet
+        worksheet = self.spreadsheet.worksheet(datetime.strftime(date, '%d.%m.%y'))
+
+        # Schedule data
+        schedule = {}
+        if table:
+            for row_number in range(2, 18):
+                values = worksheet.row_values(row_number)
+                schedule[values[0]] = values[1:]
+            if not hw:
+                return schedule
+
+        # Homework data
+        homework = []
+        if hw:
+            for row_number in range(19, 26):
+                try:
+                    values = worksheet.row_values(row_number)
+                except IndexError:
+                    continue
+                values[1] = values[1].replace('\\n', '\n')
+                values[2] = values[2].split(', ')
+                homework.append({key: values[i] for i, key in enumerate(['name', 'content', 'files', 'source'])})
+            if not table:
+                return homework
+
+        # Returns both
+        if table and hw:
+            return schedule, homework
+
     async def get_homework(self, date: datetime):
-        """Returns homework for a given date or ValueError if format is wrong
+        """Returns homework for a given date
 
         :param date: datetime - DateTime object
         :return: dict - [{name: str, content: str, files: list, source: str}, ]
@@ -51,14 +161,15 @@ class School(commands.Cog):
                     src = message.jump_url
                     homework.append({'name': name, 'content': content, 'files': files, 'source': src})
                     break
+        if not homework:
+            homework.append({'name': "Ничего не задано", 'content': r"¯\_(ツ)_/¯", 'files': [], 'source': ''})
 
         return homework
 
-    async def get_schedule(self, date: datetime, course: str):
+    async def get_schedule(self, date: datetime):
         """Returns the timetable from the school website
 
         :param date: datetime - The date for which you need to get the schedule
-        :param course: str - School course to be returned
         :return: dict - {course: [lesson1, lesson2], } or commands.BadArgument
         """
         # Argument error handler
@@ -67,9 +178,6 @@ class School(commands.Cog):
         today = datetime.today()
         if (date.month not in [today.month, today.month + 1]) or (date.year != today.year):
             return commands.BadArgument("Schedule not posted for the selected date")
-        check = ('5а', '5б', '6а', '6б', '7аs', '7б', '8а', '8б', '9а', '9б', '10м', '10х', '10э', '11м', '11х', '11э')
-        if course not in check:
-            return commands.BadArgument("Incorrect course")
 
         # Get soup
         response = requests.get(self.bot.ScheduleURL)
@@ -103,7 +211,7 @@ class School(commands.Cog):
             for row in new_table[1:]:
                 schedule[row[0]] = [lesson.capitalize() for lesson in row[2:]]
 
-        return schedule[course]
+        return schedule
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -119,7 +227,7 @@ class School(commands.Cog):
 
         # Get tomorrow date (or monday if tomorrow is weekend)
         date = datetime.today() + timedelta(days=1)
-        if date.weekday() > 5:
+        if date.weekday() > 4:
             date += timedelta(days=7 - date.weekday())
 
         # Avoid existing message
@@ -128,20 +236,20 @@ class School(commands.Cog):
             return
 
         # Get data
-        timetable = await self.get_schedule(date=date, course='11м')
-        if not isinstance(timetable, list):
+        timetable = await self.get_schedule(date=date)
+        if not isinstance(timetable, dict):
             return
 
         # Message create
-        date = await self.date_format(date=date)
-        embed = discord.Embed(title=f"Расписание {date}", description='', color=self.bot.ColorDefault)
-        for index, lesson in enumerate(timetable):
+        formatted_date = await self.date_format(date=date)
+        embed = discord.Embed(title=f"Расписание {formatted_date}", description='', color=self.bot.ColorDefault)
+        for index, lesson in enumerate(timetable['11м']):
             embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
 
-        # Send message and add buttons
+        # Send message and update DB
         message = await channel.send(embed=embed)
-        for button in ('🔼', '➡️'):
-            await message.add_reaction(emoji=button)
+        await message.add_reaction(emoji='➡️')
+        await self.update_db(date=date, schedule=timetable, homework=await self.get_homework(date=date), format=True)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
