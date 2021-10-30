@@ -106,7 +106,7 @@ class School(commands.Cog):
         }
         homework = {}
         for channel in self.bot.get_channel(self.bot.HomeworkID).text_channels:
-            async for message in channel.history():
+            async for message in channel.history(limit=5):
                 if "дз" in message.content and datetime.strftime(date, '%d.%m.%y') in message.content:
                     lesson = lessons[str(message.channel)]
                     content = ''
@@ -227,15 +227,15 @@ class School(commands.Cog):
         channel = self.bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         member = payload.member
-        reaction = discord.utils.get(message.reactions, emoji=payload.emoji.name)
+        reaction = payload.emoji
 
         # Work only with #Schedule, avoiding bot's reactions
         if channel.id != self.bot.ScheduleID:
             return
         if member == self.bot.user:
             return
-        if reaction.emoji != '🔄':
-            return await reaction.remove(member)
+        if reaction.name != '🔄':
+            return await message.remove_reaction(emoji=reaction, member=member)
 
         # Get message embed without homework (fields)
         embed = message.embeds[0]
@@ -256,7 +256,7 @@ class School(commands.Cog):
 
         # Edit message and update DB
         await message.edit(embed=embed)
-        await reaction.remove(member)
+        await message.remove_reaction(emoji=reaction, member=member)
         await self.update_db(date=date, homework=homework)
 
     @commands.command(
