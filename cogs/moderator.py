@@ -10,10 +10,7 @@ from discord.utils import get
 
 
 class Moderator(commands.Cog):
-    """
-    Provides server administration methods
-    Inherits from command.Cog
-    """
+    """Provides server administration methods"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 

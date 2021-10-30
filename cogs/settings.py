@@ -6,11 +6,7 @@ from os import listdir
 
 
 class Settings(commands.Cog):
-    """
-    Allows to change the Bot's functionality directly from the channel.
-    Only responds to a request from a owner.
-    Inherits from commands.Cog
-    """
+    """Allows to change Bot's functionality directly from discord. Only responds to request from owner"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 

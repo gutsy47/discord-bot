@@ -90,7 +90,7 @@ async def on_command_error(ctx, error):
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.BadArgument):
-        embed.description += error.args[0].replace('"', '**').replace('.', '')
+        embed.description += error.args[0].replace('"', '**')
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.MemberNotFound):

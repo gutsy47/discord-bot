@@ -11,10 +11,7 @@ from bs4 import BeautifulSoup
 
 
 class School(commands.Cog):
-    """
-    A module for interacting with homework, schedule, etc.
-    Inherits from command.Cog
-    """
+    """A module for interacting with homework and schedule"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         credentials = {
@@ -39,14 +36,14 @@ class School(commands.Cog):
             'Mon': 'понедельник', 'Tue': 'вторник', 'Wed': 'среда', 'Thu': 'четверг', 'Fri': 'пятница',
             'Sat': 'суббота', 'Sun': 'воскресенье'
         }
-        return week[datetime.strftime(date, '%a')] + datetime.strftime(date, ' %d.%m.%y')
+        return week[datetime.strftime(date, '%a')].capitalize() + datetime.strftime(date, ' %d.%m.%y')
 
-    async def update_db(self, date: datetime, schedule: dict = None, homework: list = None, format: bool = False):
+    async def update_db(self, date: datetime, schedule: dict = None, homework: dict = None, format: bool = False):
         """Sends data to google sheets. Formats if specified
 
         :param date: datetime - DateTime object, sheet names is dates
-        :param schedule: dict - Schedule with the same style as in get_schedule.return (or None)
-        :param homework: list - Homework with the same style as in get_homework.return (or None)
+        :param schedule: dict - Schedule with the same style as in get_schedule (or None)
+        :param homework: dict - Homework with the same style as in get_homework (or None)
         :param format: bool - Boolean value indicating the need to update the table style
         """
         # Get worksheet object from opened spreadsheet
@@ -65,10 +62,10 @@ class School(commands.Cog):
         if homework:
             worksheet.update('A18:D18', [['Name', 'Content', 'Files', 'Source']])  # Header
             rows = []
-            for item in homework:
-                item['content'] = item['content'].replace('\n', '\\n')
-                item['files'] = ', '.join(item['files'])
-                rows.append(list(item.values()))
+            for key, value in homework.items():
+                homework[key]['content'] = homework[key]['content'].replace('\n', '\\n')
+                homework[key]['files'] = ', '.join(homework[key]['files'])
+                rows.append([key] + list(value.values()))
             worksheet.update('A19:D25', rows)  # Content
 
         # Set worksheet style
@@ -78,19 +75,15 @@ class School(commands.Cog):
                 worksheet.format(cords, {
                     'textFormat': {'fontSize': 9},
                     'borders': {
-                        'top': {'style': 'SOLID'},
-                        'bottom': {'style': 'SOLID'},
-                        'left': {'style': 'SOLID'},
-                        'right': {'style': 'SOLID'}
+                        'top': {'style': 'SOLID'}, 'bottom': {'style': 'SOLID'},
+                        'left': {'style': 'SOLID'}, 'right': {'style': 'SOLID'}
                     }
                 })
             for cords in ('A1:J1', 'A18:D18', 'A1:A25'):  # Headers' borders
                 worksheet.format(cords, {
                     'borders': {
-                        'top': {'style': 'SOLID', 'width': 2},
-                        'bottom': {'style': 'SOLID', 'width': 2},
-                        'left': {'style': 'SOLID', 'width': 2},
-                        'right': {'style': 'SOLID', 'width': 2}
+                        'top': {'style': 'SOLID', 'width': 2}, 'bottom': {'style': 'SOLID', 'width': 2},
+                        'left': {'style': 'SOLID', 'width': 2}, 'right': {'style': 'SOLID', 'width': 2}
                     },
                     'horizontalAlignment': 'RIGHT',
                     'textFormat': {'bold': True}
@@ -98,49 +91,11 @@ class School(commands.Cog):
             for cords in ('A1:J1', 'A18:D18'):  # Top headers' text style
                 worksheet.format(cords, {'horizontalAlignment': 'CENTER', 'textFormat': {'fontSize': 12}})
 
-    async def download_db(self, date: datetime, table: bool = False, hw: bool = False):
-        """Returns homework from google sheets
-
-        :param date: datetime - DateTime object, sheet names is dates
-        :param table: bool - Boolean value indicating the need to download homework
-        :param hw: bool - Boolean value indicating the need to download homework
-        :return: schedule for course, homework or one of this
-        """
-        # Get worksheet object from opened spreadsheet
-        worksheet = self.spreadsheet.worksheet(datetime.strftime(date, '%d.%m.%y'))
-
-        # Schedule data
-        schedule = {}
-        if table:
-            for row_number in range(2, 18):
-                values = worksheet.row_values(row_number)
-                schedule[values[0]] = values[1:]
-            if not hw:
-                return schedule
-
-        # Homework data
-        homework = []
-        if hw:
-            for row_number in range(19, 26):
-                try:
-                    values = worksheet.row_values(row_number)
-                except IndexError:
-                    continue
-                values[1] = values[1].replace('\\n', '\n')
-                values[2] = values[2].split(', ')
-                homework.append({key: values[i] for i, key in enumerate(['name', 'content', 'files', 'source'])})
-            if not table:
-                return homework
-
-        # Returns both
-        if table and hw:
-            return schedule, homework
-
     async def get_homework(self, date: datetime):
         """Returns homework for a given date
 
         :param date: datetime - DateTime object
-        :return: dict - [{name: str, content: str, files: list, source: str}, ]
+        :return: dict - {lesson: {content: str, files: list, source: str}, }
         """
         lessons = {
             '📙physics': 'Физика', '📙maths': 'Математика', '📙ict': 'Информатика',
@@ -149,20 +104,18 @@ class School(commands.Cog):
             '📘biology': 'Биология', '📘chemistry': 'Химия',
             '📒astronomy': 'Астрономия', '📒geography': 'География',
         }
-        homework = []
+        homework = {}
         for channel in self.bot.get_channel(self.bot.HomeworkID).text_channels:
             async for message in channel.history():
                 if "дз" in message.content and datetime.strftime(date, '%d.%m.%y') in message.content:
-                    name = lessons[str(message.channel)]
+                    lesson = lessons[str(message.channel)]
                     content = ''
                     if '\n' in message.content:
                         content = message.content[message.content.find('\n'):]  # Cut off the title
                     files = [file.url for file in message.attachments]
                     src = message.jump_url
-                    homework.append({'name': name, 'content': content, 'files': files, 'source': src})
+                    homework[lesson] = {'content': content, 'files': files, 'source': src}
                     break
-        if not homework:
-            homework.append({'name': "Ничего не задано", 'content': r"¯\_(ツ)_/¯", 'files': [], 'source': ''})
 
         return homework
 
@@ -220,8 +173,7 @@ class School(commands.Cog):
     @tasks.loop(minutes=15)
     async def homework_and_schedule(self):
         """Schedule distribution
-        Sends timetable for the 11m course to the #Schedule channel.
-        Also adds buttons(reactions) to view homework or hide data
+        Sends timetable and homework for the 11m course to the #Schedule channel.
         """
         channel = self.bot.get_channel(self.bot.ScheduleID)  # Schedule channel
 
@@ -231,7 +183,10 @@ class School(commands.Cog):
             date += timedelta(days=7 - date.weekday())
 
         # Avoid existing message
-        last_message = await channel.fetch_message(channel.last_message_id)
+        try:
+            last_message = await channel.fetch_message(channel.last_message_id)
+        except discord.errors.HTTPException:
+            return
         if datetime.strftime(date, '%d.%m.%y') in last_message.embeds[0].title:
             return
 
@@ -239,150 +194,106 @@ class School(commands.Cog):
         timetable = await self.get_schedule(date=date)
         if not isinstance(timetable, dict):
             return
+        homework = await self.get_homework(date=date)
 
         # Message create
-        formatted_date = await self.date_format(date=date)
-        embed = discord.Embed(title=f"Расписание {formatted_date}", description='', color=self.bot.ColorDefault)
+        title = await self.date_format(date=date)
+        embed = discord.Embed(title=title, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
         for index, lesson in enumerate(timetable['11м']):
             embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
+        for lesson, hw in homework.items():
+            if lesson[:3].lower() in embed.description.lower():
+                value = hw['content']
+                if hw['files']:
+                    value += "\nПрикреплённые файлы: "
+                    for index, link in enumerate(hw['files']):
+                        value += f"[№{index + 1}]({link})"
+                        value += ', ' if index + 1 < len(hw['files']) else ''
+                embed.add_field(name=lesson, value=value, inline=False)
+        embed.url = self.bot.ScheduleURL
 
         # Send message and update DB
         message = await channel.send(embed=embed)
-        await message.add_reaction(emoji='➡️')
-        await self.update_db(date=date, schedule=timetable, homework=await self.get_homework(date=date), format=True)
+        await message.add_reaction(emoji='🔄')
+        await self.update_db(date=date, schedule=timetable, homework=homework, format=True)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Changes the schedule to homework and on the contrary. Clicking the up arrow hides the content
+        """Updates homework in reaction message
 
         :param payload: discord.RawReactionActionEvent - The raw event payload data
         """
-        message: discord.Message = await self.bot.get_channel(payload.channel_id).fetch_message(payload.message_id)
-        reaction: discord.Reaction = discord.utils.get(message.reactions, emoji=payload.emoji.name)
-        member: discord.Member = payload.member
-        try:
-            title = message.embeds[0].title.split()
-            current = title[0] + ' '
-            if current not in ("Расписание ", "ДЗ "):
-                return
-            file_name = '.'.join(title[2].split('.')[::-1]) + ' ' + title[1]
-            date = ' '.join(title[1:])
-        except IndexError:
-            return
-        except AttributeError:
-            return
+        # Get payload data
+        channel = self.bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        member = payload.member
+        reaction = discord.utils.get(message.reactions, emoji=payload.emoji.name)
 
+        # Work only with #Schedule, avoiding bot's reactions
+        if channel.id != self.bot.ScheduleID:
+            return
         if member == self.bot.user:
             return
-        if (not reaction.me or reaction.count > 1) and message.author.id == self.bot.user.id:
-            if reaction.emoji != '🔄':
-                await reaction.remove(member)
+        if reaction.emoji != '🔄':
+            return await reaction.remove(member)
 
-        if reaction.emoji == '🔄':  # Recheck for new hw
-            with open(f"schedules/{file_name}.json", 'r', encoding='UTF-8') as file:
-                recheck = json.load(file)
+        # Get message embed without homework (fields)
+        embed = message.embeds[0]
+        date = datetime.strptime(embed.title.split()[1], '%d.%m.%y')
+        embed.clear_fields()
 
-            homework = await self.get_homework(date=date[-8:])
-            recheck['homework'] = []
-            if homework:
-                for lesson in homework:
-                    if lessons[lesson['lesson']][:3] in recheck['schedule']['description']:
-                        value = lesson['content'] + f" ([Источник]({lesson['source']}))"
-                        if lesson['attachments']:
-                            value += "\nПрикреплённые файлы: "
-                            for index, link in enumerate(lesson['attachments']):
-                                value += f"[№{index + 1}]({link})"
-                                value += ', ' if index + 1 < len(lesson['attachments']) else ''
-                        recheck['homework'].append({'name': lessons[lesson['lesson']], 'value': value})
-            else:
-                recheck['homework'].append({'name': "Ничего не задано", 'value': r"¯\_(ツ)_/¯"})
+        # Update homework
+        homework = await self.get_homework(date=date)
+        for lesson, hw in homework.items():
+            if lesson[:3].lower() in embed.description.lower():
+                value = hw['content']
+                if hw['files']:
+                    value += "\nПрикреплённые файлы: "
+                    for index, link in enumerate(hw['files']):
+                        value += f"[№{index + 1}]({link})"
+                        value += ', ' if index + 1 < len(hw['files']) else ''
+                embed.add_field(name=lesson, value=value, inline=False)
 
-            with open(f"schedules/{file_name}.json", 'w', encoding='UTF-8') as file:
-                json.dump(recheck, file, ensure_ascii=False, indent=2)
-
-            embed = discord.Embed(title=current + date, color=self.bot.ColorDefault)
-            for lesson in recheck['homework']:
-                embed.add_field(name=lesson['name'], value=lesson['value'], inline=False)
-            await message.edit(embed=embed)
-            await reaction.remove(member)
-
-        elif reaction.emoji == '➡️':  # Change homework/schedule
-            with open(f"schedules/{file_name}.json", 'r', encoding='UTF-8') as file:
-                loaded = json.load(file)
-
-            change = "ДЗ " if current == "Расписание " else "Расписание "
-            embed = discord.Embed(title=change+date, color=self.bot.ColorDefault)
-            if change == "ДЗ ":
-                for lesson in loaded['homework']:
-                    embed.add_field(name=lesson['name'], value=lesson['value'], inline=False)
-                    await message.add_reaction(emoji='🔄')
-            else:
-                embed.description = loaded['schedule']['description']
-                await message.remove_reaction(emoji='🔄', member=self.bot.user)
-
-            await message.edit(embed=embed)
-
-        elif reaction.emoji == '🔼':  # Hide
-            embed = discord.Embed(title=current+date, color=self.bot.ColorDefault)
-
-            await message.edit(embed=embed)
-            for button in ('➡️', '🔼', '🔄'):
-                await message.remove_reaction(emoji=button, member=self.bot.user)
-            await message.add_reaction(emoji='🔽')
-
-        elif reaction.emoji == '🔽':  # Show
-            with open(f"schedules/{file_name}.json", 'r', encoding='UTF-8') as file:
-                loaded = json.load(file)
-
-            embed = discord.Embed(title=current+date, color=self.bot.ColorDefault)
-            if current == "ДЗ ":
-                for lesson in loaded['homework']:
-                    embed.add_field(name=lesson['name'], value=lesson['value'], inline=False)
-            else:
-                embed.description = loaded['schedule']['description']
-
-            await message.edit(embed=embed)
-            await message.remove_reaction(emoji='🔽', member=self.bot.user)
-            for button in ('🔼', '➡️'):
-                await message.add_reaction(emoji=button)
-            if current == "ДЗ ":
-                await message.add_reaction(emoji='🔄')
+        # Edit message and update DB
+        await message.edit(embed=embed)
+        await reaction.remove(member)
+        await self.update_db(date=date, homework=homework)
 
     @commands.command(
         name="schedule",
-        brief="schedule [course] [date]",
+        brief="schedule [course] (date)",
         usage=[
             ["course", "required", "Format as on school website"],
-            ["date", "required", "DD.MM.YY(default: tomorrow)"]
+            ["date", "optional", "DD.MM.YY (default: today)"]
         ],
         description="Sends schedule"
     )
-    @commands.cooldown(1, 30, commands.BucketType.user)
     async def schedule(self, ctx, course: str, date: str = None):
         """Sends schedule for class
 
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param course: str - Course name in format as on the school website
-        :param date: str - Date in DD.MM.YY format (tomorrow as default)
+        :param date: str - Date in DD.MM.YY format (today as default)
         """
-        # try:
-        #     date = datetime.strptime(date, '%d.%m.%y')
-        # except ValueError:
-        #     return commands.BadArgument("**Date** should have **dd.mm.yy** format")
-        date = datetime.strptime(date, '%d.%m.%y') if date else datetime.today()
-        if date.weekday() < 5:
-            date = datetime.strftime(date, '%d.%m.%y')
-        else:  # Monday if tomorrow is weekend
-            date = datetime.strftime(date + timedelta(days=7 - date.weekday()), '%d.%m.%y')
-        timetables = await self.get_schedule(date=date, course=course)
-        if not isinstance(timetables, dict):
-            raise timetables
+        # Argument error handler
+        courses = ('5а', '5б', '6а', '6б', '7а', '7б', '8а', '8б', '9а', '9б', '10м', '10х', '10э', '11м', '11х', '11э')
+        if course not in courses:
+            raise commands.BadArgument("Incorrect course")
+        try:
+            date = datetime.strptime(date, '%d.%m.%y') if date else datetime.today()
+        except ValueError:
+            raise commands.BadArgument("**Date** should have **DD.MM.YY** format")
 
-        date = days[datetime.strftime(datetime.strptime(date, '%d.%m.%y'), '%a')] + ' ' + date
-        embed = discord.Embed(title=f"{course} {date}", description='', color=self.bot.ColorDefault)
-        for key, value in timetables.items():
-            for index, lesson in enumerate(value):
-                embed.description += f"\n`{index+1}` {lesson}" if lesson else ''
+        # Get data
+        timetable = await self.get_schedule(date=date)
+        if not isinstance(timetable, dict):
+            raise timetable
+
+        # Create message
+        title = await self.date_format(date=date) + ' ' + course
+        embed = discord.Embed(title=title, description='', color=self.bot.ColorDefault)
+        for index, lesson in enumerate(timetable[course]):
+            embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
 
         await ctx.send(embed=embed)
 
