@@ -106,7 +106,7 @@ class School(commands.Cog):
         }
         homework = {}
         for channel in self.bot.get_channel(self.bot.HomeworkID).text_channels:
-            async for message in channel.history(limit=5):
+            async for message in channel.history():
                 if "дз" in message.content and datetime.strftime(date, '%d.%m.%y') in message.content:
                     lesson = lessons[str(message.channel)]
                     content = ''
