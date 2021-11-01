@@ -54,8 +54,8 @@ class English(commands.Cog):
         embed.description = ''
         embed.set_footer(text="Press the button corresponding to the block number")
         for key, value in words.items():
-            value = '\n'.join([f"{pair[0]} – {pair[1]}" for pair in value[:4]]) + "\n..."
-            embed.add_field(name=f"List {key}", value=f"```{value}```", inline=True)
+            value = '\n'.join([f"{pair[0]} – {pair[1]}" for pair in value[:4]]) + "\n..." if len(value) > 4 else ''
+            embed.add_field(name=f"List {key}", value=f"```{value}```", inline=False)
         await message.edit(embed=embed)
 
         # Add reactions
