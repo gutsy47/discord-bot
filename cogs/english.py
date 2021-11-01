@@ -127,23 +127,25 @@ class English(commands.Cog):
 
             # Send a choice message and add reactions if required
             embed = discord.Embed(title=word[1].capitalize(), description='', color=self.bot.ColorDefault)
+            answers = ['a', 'b', 'c', 'd']
             for i in range(4):
-                embed.description += f"{i+1} - {choice[i][0]}\n"
+                embed.description += f"`{answers[i]}` - {choice[i][0]}\n"
             message = await ctx.send(embed=embed)
 
             # Wait for user's answer
             try:
                 def check(msg):
-                    return msg.content in ('1', '2', '3', '4') and msg.channel == ctx.channel
+                    return msg.content.lower() in answers and msg.channel == ctx.channel
 
                 answer = await self.bot.wait_for('message', timeout=60.0, check=check)
+                answer = answers.index(answer.content.lower())
             except asyncio.exceptions.TimeoutError:
                 embed.description = "Time out"
                 await message.edit(embed=embed)
                 return
             else:
-                await message.add_reaction(emoji='🟩' if int(answer.content) == correct+1 else '🟥')
-                embed.title = ' - '.join(word[::-1]).capitalize()
+                embed.title = '🟢 ' if answer == correct else '🔴 '
+                embed.title += ' - '.join(word[::-1]).capitalize()
                 await message.edit(embed=embed)
 
             # The words ended. Repeat?
