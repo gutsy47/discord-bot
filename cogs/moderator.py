@@ -24,6 +24,8 @@ class Moderator(commands.Cog):
         message: discord.Message = reaction.message
         channel: discord.TextChannel = message.channel
 
+        if isinstance(channel, discord.DMChannel):
+            return
         if message.author.id != self.bot.user.id or member == self.bot.user:
             return
         if reaction.count > 1:

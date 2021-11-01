@@ -225,6 +225,8 @@ class School(commands.Cog):
         """
         # Get payload data
         channel = self.bot.get_channel(payload.channel_id)
+        if not channel:  # Avoiding DM messages
+            return
         message = await channel.fetch_message(payload.message_id)
         member = payload.member
         reaction = payload.emoji

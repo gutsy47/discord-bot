@@ -114,7 +114,7 @@ async def on_command_error(ctx, error):
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.MissingPermissions):
-        embed.description += f"You don't have permission to run this command"
+        embed.description += "You don't have permission to run this command"
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.ExtensionNotFound):
@@ -122,7 +122,11 @@ async def on_command_error(ctx, error):
         return await ctx.send(embed=embed)
 
     if isinstance(error, commands.NotOwner):
-        embed.description += f"You do not own this bot"
+        embed.description += "You do not own this bot"
+        return await ctx.send(embed=embed)
+
+    if isinstance(error, commands.PrivateMessageOnly):
+        embed.description += "This command can only be used in private messages"
         return await ctx.send(embed=embed)
 
     raise error
