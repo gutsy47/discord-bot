@@ -5,6 +5,7 @@ from discord.ext import commands
 import gspread
 import os
 import asyncio
+from random import randint
 
 
 class English(commands.Cog):
@@ -26,6 +27,7 @@ class English(commands.Cog):
         service_account = gspread.service_account_from_dict(credentials)
         self.spreadsheet = service_account.open("Word lists")
         self.users = {}
+        self.users_tmp = {}
 
     @commands.command(
         name="select",
@@ -34,7 +36,10 @@ class English(commands.Cog):
     )
     @commands.dm_only()
     async def select(self, ctx):
-        """Loads word lists from the database, displays them and processes the user's reaction"""
+        """Loads word lists from the database, displays them and processes the user's reaction
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        """
         embed = discord.Embed(title="Word lists", description="Loading...", color=self.bot.ColorDefault)
         message = await ctx.send(embed=embed)
 
@@ -59,10 +64,10 @@ class English(commands.Cog):
             await message.add_reaction(emoji=reactions[i])  # Words should be sorted by title and length should be <= 10
 
         # Wait for user's reaction
-        def check(reaction, user):
-            return user != self.bot.user and str(reaction.emoji) in reactions
-
         try:
+            def check(reaction, user):
+                return user != self.bot.user and str(reaction.emoji) in reactions
+
             reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
         except asyncio.exceptions.TimeoutError:
             embed = discord.Embed(title="Time out", color=self.bot.ColorDefault)
@@ -76,6 +81,93 @@ class English(commands.Cog):
             )
             await ctx.send(embed=embed)
             self.users[user.id] = words[index]
+
+    @commands.command(
+        name="learn",
+        brief="learn (word list number)",
+        usage=[
+            ["word list number", "optional", "Word list number (integer)"]
+        ],
+        description="Launches training in test format"
+    )
+    @commands.dm_only()
+    async def learn(self, ctx, index: int = None):
+        """Launches a multi-choice learning system
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param index: int - Number of the list of words to get it from the DB
+        """
+        # Get word_list as user_tmp
+        if index:
+            try:
+                worksheet = self.spreadsheet.worksheet(title=str(index))
+                self.users[ctx.author.id] = worksheet.get_all_values()
+            except gspread.exceptions.WorksheetNotFound:
+                raise commands.BadArgument("Block with this number does not exist")
+        try:
+            self.users_tmp[ctx.author.id] = self.users[ctx.author.id][:]
+        except KeyError:
+            raise commands.BadArgument("You haven't selected a block yet")
+
+        # Main function
+        while True:
+            # Prepare data
+            index = randint(0, len(self.users_tmp[ctx.author.id]) - 1)
+            word = self.users_tmp[ctx.author.id].pop(index)
+            choice = ['', '', '', '']
+            correct = randint(0, 3)
+            choice[correct] = word
+            for i in range(4):
+                if not choice[i]:
+                    while True:
+                        index = randint(0, len(self.users[ctx.author.id]) - 1)
+                        choice[i] = self.users[ctx.author.id][index]
+                        if choice[i] != word:
+                            break
+
+            # Send a choice message and add reactions if required
+            embed = discord.Embed(title=word[1].capitalize(), description='', color=self.bot.ColorDefault)
+            for i in range(4):
+                embed.description += f"{i+1} - {choice[i][0]}\n"
+            message = await ctx.send(embed=embed)
+
+            # Wait for user's answer
+            try:
+                def check(msg):
+                    return msg.content in ('1', '2', '3', '4') and msg.channel == ctx.channel
+
+                answer = await self.bot.wait_for('message', timeout=60.0, check=check)
+            except asyncio.exceptions.TimeoutError:
+                embed.description = "Time out"
+                await message.edit(embed=embed)
+                return
+            else:
+                await message.add_reaction(emoji='🟩' if int(answer.content) == correct+1 else '🟥')
+                embed.title = ' - '.join(word[::-1]).capitalize()
+                await message.edit(embed=embed)
+
+            # The words ended. Repeat?
+            if len(self.users_tmp[ctx.author.id]) == 0:
+                # Send message
+                embed = discord.Embed(title="Words ended", description="Repeat?", color=self.bot.ColorDefault)
+                message = await ctx.send(embed=embed)
+                for button in ('🟩', '🟥'):
+                    await message.add_reaction(emoji=button)
+
+                # Wait for user's reaction
+                try:
+                    def check(reaction, user):
+                        return user != self.bot.user and str(reaction.emoji) in ('🟩', '🟥')
+
+                    reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
+                except asyncio.exceptions.TimeoutError:
+                    embed.description = "Time out"
+                    return await message.edit(embed=embed)
+                else:
+                    if reaction.emoji == '🟩':
+                        self.users_tmp[ctx.author.id] = self.users[ctx.author.id][:]
+                    else:
+                        return
 
 
 def setup(bot):
