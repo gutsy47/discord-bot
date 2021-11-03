@@ -86,7 +86,7 @@ class English(commands.Cog):
         name="learn",
         brief="learn (word list number)",
         usage=[
-            ["word list number", "optional", "Word list number (integer)"]
+            ["number", "optional", "Word list number (integer)"]
         ],
         description="Launches training in test format"
     )
@@ -180,7 +180,7 @@ class English(commands.Cog):
         name="exam",
         brief="exam (word list number)",
         usage=[
-            ["word list number", "optional", "Word list number (integer)"]
+            ["number", "optional", "Word list number (integer)"]
         ],
         description="Launches exam"
     )

@@ -14,7 +14,10 @@ class HelpCommand(commands.HelpCommand):
         embed.set_author(name=f"{bot.user.name}'s modules", icon_url=bot.user.avatar_url)
         for cog in mapping:
             if cog:
-                embed.add_field(name=cog.qualified_name, value=f"`-help {cog.qualified_name}`", inline=True)
+                for command in cog.get_commands():
+                    if not command.hidden:
+                        embed.add_field(name=cog.qualified_name, value=f"`-help {cog.qualified_name}`", inline=True)
+                        break
         await self.get_destination().send(embed=embed)
 
     async def send_cog_help(self, cog):
@@ -23,7 +26,8 @@ class HelpCommand(commands.HelpCommand):
         for command in cog.get_commands():
             if not command.hidden:
                 embed.add_field(name=f"`{command.brief}`", value=command.description, inline=False)
-        await self.get_destination().send(embed=embed)
+        if embed.fields:
+            await self.get_destination().send(embed=embed)
 
     async def send_command_help(self, command):
         """Sends a detailed description of the command"""
