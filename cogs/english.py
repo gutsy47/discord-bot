@@ -54,7 +54,7 @@ class English(commands.Cog):
         embed.description = ''
         embed.set_footer(text="Press the button corresponding to the block number")
         for key, value in words.items():
-            value = '\n'.join([f"{pair[0]} – {pair[1]}" for pair in value[:4]]) + "\n..." if len(value) > 4 else ''
+            value = '\n'.join([f"{pair[0]} – {pair[1]}" for pair in value[:4]]) + ("\n..." if len(value) > 4 else '')
             embed.add_field(name=f"List {key}", value=f"```{value}```", inline=False)
         await message.edit(embed=embed)
 
@@ -125,7 +125,7 @@ class English(commands.Cog):
                         if choice[i] != word:
                             break
 
-            # Send a choice message and add reactions if required
+            # Send a choice message
             embed = discord.Embed(title=word[1].capitalize(), description='', color=self.bot.ColorDefault)
             answers = ['a', 'b', 'c', 'd']
             for i in range(4):
@@ -135,7 +135,7 @@ class English(commands.Cog):
             # Wait for user's answer
             try:
                 def check(msg):
-                    return msg.content.lower() in answers and msg.channel == ctx.channel
+                    return msg.channel == ctx.channel and msg.content.lower() in answers
 
                 answer = await self.bot.wait_for('message', timeout=60.0, check=check)
                 answer = answers.index(answer.content.lower())
@@ -159,7 +159,9 @@ class English(commands.Cog):
                 # Wait for user's reaction
                 try:
                     def check(reaction, user):
-                        return user != self.bot.user and str(reaction.emoji) in ('🟩', '🟥')
+                        emoji = str(reaction.emoji)
+                        channel = reaction.message.channel
+                        return channel == ctx.channel and user != self.bot.user and emoji in ('🟩', '🟥')
 
                     reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
                 except asyncio.exceptions.TimeoutError:
@@ -170,6 +172,73 @@ class English(commands.Cog):
                         self.users_tmp[ctx.author.id] = self.users[ctx.author.id][:]
                     else:
                         return
+
+    @commands.command(
+        name="exam",
+        brief="exam (word list number)",
+        usage=[
+            ["word list number", "optional", "Word list number (integer)"]
+        ],
+        description="Launches exam"
+    )
+    @commands.dm_only()
+    async def exam(self, ctx, index: int = None):
+        """Launches an exam system
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param index: int - Number of the list of words to get it from the DB
+        """
+        # Get word_list as user_tmp
+        if index:
+            try:
+                worksheet = self.spreadsheet.worksheet(title=str(index))
+                self.users[ctx.author.id] = worksheet.get_all_values()
+            except gspread.exceptions.WorksheetNotFound:
+                raise commands.BadArgument("Block with this number does not exist")
+        try:
+            self.users_tmp[ctx.author.id] = self.users[ctx.author.id][:]
+        except KeyError:
+            raise commands.BadArgument("You haven't selected a block yet")
+
+        # Main function
+        wrong_answers = []
+        while True:
+            # Prepare data & send a message
+            index = randint(0, len(self.users_tmp[ctx.author.id]) - 1)
+            word = self.users_tmp[ctx.author.id].pop(index)
+            embed = discord.Embed(title=word[1].capitalize(), color=self.bot.ColorDefault)
+            message = await ctx.send(embed=embed)
+
+            # Wait for user's answer
+            try:
+                def check(msg):
+                    return msg.channel == ctx.channel and msg.author != self.bot.user
+
+                answer = await self.bot.wait_for('message', timeout=60.0, check=check)
+            except asyncio.exceptions.TimeoutError:
+                embed.description = "Time out"
+                await message.edit(embed=embed)
+                return
+            else:
+                if answer.content.lower() == word[0].lower():
+                    embed.title = '🟢 ' + ' - '.join(word[::-1]).capitalize()
+                else:
+                    embed.title = '🔴 ' + ' - '.join(word[::-1]).capitalize()
+                    wrong_answers.append(' - '.join(word[::-1]).capitalize() + f" (Your answer: **{answer.content}**)")
+                await message.edit(embed=embed)
+
+            # The words ended. Repeat?
+            if len(self.users_tmp[ctx.author.id]) == 0:
+                # Send message
+                accuracy = 100 - round(len(wrong_answers) / len(self.users[ctx.author.id]) * 100)
+                embed = discord.Embed(
+                    title=f"That's all. Your accuracy is {accuracy}%",
+                    description="Wrong answers:" if accuracy != 100 else '',
+                    color=self.bot.ColorDefault
+                )
+                for item in wrong_answers:
+                    embed.description += f"\n{item}"
+                return await ctx.send(embed=embed)
 
 
 def setup(bot):
