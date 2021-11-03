@@ -127,9 +127,10 @@ class English(commands.Cog):
 
             # Send a choice message
             embed = discord.Embed(title=word[1].capitalize(), description='', color=self.bot.ColorDefault)
-            answers = ['a', 'b', 'c', 'd']
+            answers = ['a', 'b', 'c', 'd', 'exit']
             for i in range(4):
                 embed.description += f"`{answers[i]}` - {choice[i][0]}\n"
+            embed.set_footer(text="Enter 'exit' to end the cycle early")
             message = await ctx.send(embed=embed)
 
             # Wait for user's answer
@@ -144,6 +145,8 @@ class English(commands.Cog):
                 await message.edit(embed=embed)
                 return
             else:
+                if answer == 4:  # Exit
+                    return
                 embed.title = '🟢 ' if answer == correct else '🔴 '
                 embed.title += ' - '.join(word[::-1]).capitalize()
                 await message.edit(embed=embed)
@@ -207,6 +210,7 @@ class English(commands.Cog):
             index = randint(0, len(self.users_tmp[ctx.author.id]) - 1)
             word = self.users_tmp[ctx.author.id].pop(index)
             embed = discord.Embed(title=word[1].capitalize(), color=self.bot.ColorDefault)
+            embed.set_footer(text="Enter 'exit' to end the cycle early")
             message = await ctx.send(embed=embed)
 
             # Wait for user's answer
@@ -220,12 +224,16 @@ class English(commands.Cog):
                 await message.edit(embed=embed)
                 return
             else:
-                if answer.content.lower() == word[0].lower():
-                    embed.title = '🟢 ' + ' - '.join(word[::-1]).capitalize()
+                if answer.content.lower() == "exit":
+                    self.users_tmp[ctx.author.id] = []
                 else:
-                    embed.title = '🔴 ' + ' - '.join(word[::-1]).capitalize()
-                    wrong_answers.append(' - '.join(word[::-1]).capitalize() + f" (Your answer: **{answer.content}**)")
-                await message.edit(embed=embed)
+                    translated = ' - '.join(word[::-1]).capitalize()
+                    if answer.content.lower() == word[0].lower():
+                        embed.title = '🟢 ' + translated
+                    else:
+                        embed.title = '🔴 ' + translated
+                        wrong_answers.append(f"{translated} (Your answer: **{answer.content}**)")
+                    await message.edit(embed=embed)
 
             # The words ended. Repeat?
             if len(self.users_tmp[ctx.author.id]) == 0:
