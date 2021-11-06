@@ -49,14 +49,14 @@ class School(commands.Cog):
         # Get worksheet object from opened spreadsheet
         date = datetime.strftime(date, '%d.%m.%y')
         try:
-            worksheet = self.spreadsheet.add_worksheet(title=date, rows='25', cols='10')
+            worksheet = self.spreadsheet.add_worksheet(title=date, rows='25', cols='11')
         except gspread.exceptions.APIError:
             worksheet = self.spreadsheet.worksheet(title=date)
 
         # Update schedule
         if schedule:
-            worksheet.update('A1:J1', [['Course', 1, 2, 3, 4, 5, 6, 7, 8, 9]])  # Header
-            worksheet.update('A2:J17', [[key] + value for key, value in schedule.items()])  # Content
+            worksheet.update('A1:K1', [['Course', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])  # Header
+            worksheet.update('A2:K17', [[key] + value for key, value in schedule.items()])  # Content
 
         # Update homework
         if homework:
@@ -70,7 +70,7 @@ class School(commands.Cog):
 
         # Set worksheet style
         if format:
-            worksheet.format('A1:J25', {'wrapStrategy': 'CLIP'})  # Wrapping style for the whole table
+            worksheet.format('A1:K25', {'wrapStrategy': 'CLIP'})  # Wrapping style for the whole table
             for cords in ('B2:J17', 'B19:D25'):  # Contents' borders
                 worksheet.format(cords, {
                     'textFormat': {'fontSize': 9},
@@ -79,7 +79,7 @@ class School(commands.Cog):
                         'left': {'style': 'SOLID'}, 'right': {'style': 'SOLID'}
                     }
                 })
-            for cords in ('A1:J1', 'A18:D18', 'A1:A25'):  # Headers' borders
+            for cords in ('A1:K1', 'A18:D18', 'A1:A25'):  # Headers' borders
                 worksheet.format(cords, {
                     'borders': {
                         'top': {'style': 'SOLID', 'width': 2}, 'bottom': {'style': 'SOLID', 'width': 2},
@@ -88,7 +88,7 @@ class School(commands.Cog):
                     'horizontalAlignment': 'RIGHT',
                     'textFormat': {'bold': True}
                 })
-            for cords in ('A1:J1', 'A18:D18'):  # Top headers' text style
+            for cords in ('A1:K1', 'A18:D18'):  # Top headers' text style
                 worksheet.format(cords, {'horizontalAlignment': 'CENTER', 'textFormat': {'fontSize': 12}})
 
     async def get_homework(self, date: datetime):
@@ -183,12 +183,9 @@ class School(commands.Cog):
             date += timedelta(days=7 - date.weekday())
 
         # Avoid existing message
-        try:
-            last_message = await channel.fetch_message(channel.last_message_id)
-        except discord.errors.HTTPException:
-            return
-        if datetime.strftime(date, '%d.%m.%y') in last_message.embeds[0].title:
-            return
+        async for message in self.bot.get_channel(self.bot.ScheduleID).history(limit=None):  # Avoid existing messages
+            if datetime.strftime(date, '%d.%m.%y') in message.embeds[0].title:
+                return
 
         # Get data
         timetable = await self.get_schedule(date=date)
