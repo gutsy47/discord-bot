@@ -71,7 +71,7 @@ class School(commands.Cog):
         # Set worksheet style
         if format:
             worksheet.format('A1:K25', {'wrapStrategy': 'CLIP'})  # Wrapping style for the whole table
-            for cords in ('B2:J17', 'B19:D25'):  # Contents' borders
+            for cords in ('B2:K17', 'B19:D25'):  # Contents' borders
                 worksheet.format(cords, {
                     'textFormat': {'fontSize': 9},
                     'borders': {
@@ -183,7 +183,7 @@ class School(commands.Cog):
             date += timedelta(days=7 - date.weekday())
 
         # Avoid existing message
-        async for message in self.bot.get_channel(self.bot.ScheduleID).history(limit=None):  # Avoid existing messages
+        async for message in channel.history(limit=None):  # Avoid existing messages
             if datetime.strftime(date, '%d.%m.%y') in message.embeds[0].title:
                 return
 
@@ -197,7 +197,7 @@ class School(commands.Cog):
         title = await self.date_format(date=date)
         embed = discord.Embed(title=title, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
         for index, lesson in enumerate(timetable['11м']):
-            embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
+            embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
         for lesson, hw in homework.items():
             if lesson[:3].lower() in embed.description.lower():
                 value = hw['content']
