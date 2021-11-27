@@ -58,9 +58,7 @@ bot = commands.Bot(command_prefix=prefix, help_command=HelpCommand(), case_insen
 bot.ColorDefault = int(os.environ['COLOR_DEFAULT'], base=16)
 bot.ColorError = int(os.environ['COLOR_ERROR'], base=16)
 bot.BannedGuildInvite = os.environ['BANNED_GUILD_INVITE']
-bot.HomeworkID = int(os.environ['HOMEWORK_CATEGORY_ID'])
-bot.ScheduleID = int(os.environ['SCHEDULE_CHANNEL_ID'])
-bot.ScheduleURL = os.environ['SCHEDULE_URL']
+bot.ScheduleURL = "http://school36.murmansk.su/izmeneniya-v-raspisanii/"
 
 
 @bot.event
@@ -136,23 +134,9 @@ async def on_command_error(ctx, error):
     raise error
 
 
-@bot.event
-async def on_member_join(member: discord.Member):
-    """Sends a greeting when someone joins a server or informs the guild owner about the absence of a system channel"""
-    if member.guild.system_channel:
-        await member.guild.system_channel.send(f"{member.mention} has **joined** a server")
-    else:
-        await member.guild.owner.send("I haven't find the system channel, You can specify it in the server settings")
-
-
-@bot.event
-async def on_member_remove(member: discord.Member):
-    """Informs that the user has removed from the server (Including ban/kick)"""
-    if member.guild.system_channel:
-        await member.guild.system_channel.send(f"{member.mention} has **left** a server")
-
 for filename in os.listdir('./cogs'):
     if filename.endswith('.py'):
-        bot.load_extension(f'cogs.{filename[:-3]}')
+        if filename == 'data_events.py':
+            bot.load_extension(f'cogs.{filename[:-3]}')
 
 bot.run(token)
