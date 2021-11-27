@@ -86,8 +86,7 @@ class DataEvents(commands.Cog):
                 (after.name, category_id, after.id)
             )
         elif isinstance(before, discord.CategoryChannel):
-            self.cursor.execute("UPDATE category SET category_name=%s WHERE category.id=%s", (after.name, after.id))
-        print("CHANNEL UPDATE END")
+            self.cursor.execute("UPDATE category SET category_name=%s WHERE category.id=%s;", (after.name, after.id))
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.GroupChannel):
@@ -114,14 +113,14 @@ class DataEvents(commands.Cog):
         )
 
         # Send greeting message
-        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s", (member.guild.id, ))
+        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (member.guild.id, ))
         is_greetings = self.cursor.fetchone()[0]
         if is_greetings and member.guild.system_channel:
             await member.guild.system_channel.send(f"{member.mention} has **joined** a server")
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        self.cursor.execute("UPDATE member SET display_name=%s WHERE user_id=%s", (after.display_name, after.id, ))
+        self.cursor.execute("UPDATE member SET display_name=%s WHERE user_id=%s;", (after.display_name, after.id, ))
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
@@ -135,7 +134,7 @@ class DataEvents(commands.Cog):
             self.cursor.execute("DELETE FROM \"user\" WHERE user_id=%s;", (member.id, ))
 
         # Send greeting message
-        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s", (member.guild.id,))
+        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (member.guild.id,))
         is_greetings = self.cursor.fetchone()[0]
         if is_greetings and member.guild.system_channel and not member == self.bot.user:
             await member.guild.system_channel.send(f"{member.mention} has **left** a server")
@@ -143,9 +142,28 @@ class DataEvents(commands.Cog):
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
         self.cursor.execute(
-            "UPDATE \"user\" SET user_name=%s, user_discriminator=%s WHERE user_id=%s",
+            "UPDATE \"user\" SET user_name=%s, user_discriminator=%s WHERE user_id=%s;",
             (after.name, after.discriminator, after.id)
         )
+
+    @commands.command(
+        name="toggle_greetings",
+        brief="toggle_greetings",
+        description="Turns on/off notification system for member join/remove in the system channel",
+    )
+    @commands.has_permissions(administrator=True)
+    async def toggle_greetings(self, ctx):
+        # Update database
+        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (ctx.guild.id,))
+        is_greetings = not self.cursor.fetchone()[0]
+        self.cursor.execute("UPDATE guild SET is_greetings=%s WHERE guild_id=%s;", (is_greetings, ctx.guild.id))
+
+        # Send message
+        answer = '' if is_greetings else '**not**'
+        embed = discord.Embed(description=f"Now I'll {answer} take care of greetings", color=self.bot.ColorDefault)
+        if not ctx.guild.system_channel:
+            embed.set_footer(text="Set the system channel in the server settings so that I can do it")
+        await ctx.send(embed=embed)
 
 
 def setup(bot):
