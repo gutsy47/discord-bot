@@ -130,7 +130,7 @@ class School(commands.Cog):
     @tasks.loop(minutes=15)
     async def homework_and_schedule(self):
         """Schedule distribution
-        Sends timetable and homework for the 11m course to the #Schedule channel.
+        Sends timetable and homework for all guilds to the schedule channel.
         """
         # Get distribution channels from DB
         self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule=True;")
@@ -237,6 +237,11 @@ class School(commands.Cog):
         description="Set or unset channel to which schedule'll be sent"
     )
     async def toggle_schedule(self, ctx, channel: discord.TextChannel):
+        """Sets channel to which schedule'll be sent
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param channel: discord.TextChannel - Channel mention or ID
+        """
         # Get channel ID or None
         self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule AND guild_id=%s;", (channel.guild.id, ))
         current_id = self.cursor.fetchone()
@@ -266,6 +271,12 @@ class School(commands.Cog):
         description="Set lesson name for the channel from where homework will be collected"
     )
     async def set_lesson(self, ctx, channel: discord.TextChannel, lesson: str):
+        """Sets channel from which homework'll be received
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param channel: discord.TextChannel - Channel mention or ID
+        :param lesson: str - Lesson name according to the course table
+        """
         # Change state
         lesson = lesson.lower()
         message = f"Now I will look for **{lesson}** homework In the **{channel.mention}**"
@@ -287,6 +298,11 @@ class School(commands.Cog):
         description="Stop collecting homework from channel"
     )
     async def unset_lesson(self, ctx, channel: discord.TextChannel):
+        """Removes channel homework from DB
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param channel: discord.TextChannel - Channel mention or ID
+        """
         self.cursor.execute("UPDATE channel SET lesson_name=NULL WHERE channel_id=%s;", (channel.id, ))
         message = f"Now the **{channel.mention}** is not related to homework"
         embed = discord.Embed(description=message, color=self.bot.ColorDefault)
@@ -299,6 +315,7 @@ class School(commands.Cog):
         description="Sends a list of all available lessons"
     )
     async def get_lessons(self, ctx):
+        """Sends a list of all available lessons from DB"""
         self.cursor.execute("SELECT lesson_name FROM lesson;")
         lessons = [lesson[0].capitalize() for lesson in self.cursor.fetchall()]
         embed = discord.Embed(title="Available lessons", description='\n'.join(lessons), color=self.bot.ColorDefault)

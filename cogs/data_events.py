@@ -7,7 +7,7 @@ import os
 
 
 class DataEvents(commands.Cog):
-    """Allows to change Bot's functionality directly from discord. Only responds to request from owner"""
+    """Responsible for the automatic collection of data"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         # Postgres connection
@@ -21,6 +21,7 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):
+        """Creates a server object and collects all information associated with it"""
         # Guild data
         self.cursor.execute(
             "INSERT INTO guild VALUES (%s, %s, NULL, False, %s);",
@@ -56,15 +57,18 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
+        """Called when a guild changes: name, AFK channel, AFK timeout, etc"""
         if before.name != after.name:
             self.cursor.execute("UPDATE guild SET guild_name=%s WHERE guild_id=%s;", (after.name, after.id))
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):
+        """Called when a guild is removed from the client"""
         self.cursor.execute("DELETE FROM guild WHERE guild_id=%s;", (guild.id,))
 
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel):
+        """Called when a guild channel is created"""
         if isinstance(channel, discord.TextChannel) or isinstance(channel, discord.VoiceChannel):
             category_id = channel.category.id if channel.category else None
             self.cursor.execute(
@@ -79,6 +83,7 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before, after):
+        """Called whenever a guild channel changes: name, topic, perms, etc"""
         if isinstance(before, discord.TextChannel) or isinstance(before, discord.VoiceChannel):
             category_id = after.category.id if after.category else None
             self.cursor.execute(
@@ -90,6 +95,7 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.GroupChannel):
+        """Called when a guild channel is deleted"""
         if isinstance(channel, discord.TextChannel) or isinstance(channel, discord.VoiceChannel):
             self.cursor.execute("DELETE FROM channel WHERE channel_id=%s;", (channel.id, ))
         elif isinstance(channel, discord.CategoryChannel):
@@ -97,6 +103,7 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
+        """Called when a member joins a Guild"""
         # Add user to database if doesn't exist
         self.cursor.execute("SELECT 1 FROM \"user\" WHERE user_id=%s;", (member.id, ))
         user_exists = self.cursor.fetchone()
@@ -120,10 +127,12 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """Called when a member updates: status, activity, nickname, roles, pending"""
         self.cursor.execute("UPDATE member SET display_name=%s WHERE user_id=%s;", (after.display_name, after.id, ))
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
+        """Called when a member leaves a Guild"""
         # Delete member
         self.cursor.execute("DELETE FROM member WHERE user_id=%s AND guild_id=%s;", (member.id, member.guild.id))
 
@@ -141,6 +150,7 @@ class DataEvents(commands.Cog):
 
     @commands.Cog.listener()
     async def on_user_update(self, before: discord.User, after: discord.User):
+        """Called when user updates his: avatar, username, discriminator"""
         self.cursor.execute(
             "UPDATE \"user\" SET user_name=%s, user_discriminator=%s WHERE user_id=%s;",
             (after.name, after.discriminator, after.id)
@@ -153,6 +163,7 @@ class DataEvents(commands.Cog):
     )
     @commands.has_permissions(administrator=True)
     async def toggle_greetings(self, ctx):
+        """Turns greetings on guild on/off"""
         # Update database
         self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (ctx.guild.id,))
         is_greetings = not self.cursor.fetchone()[0]
