@@ -8,6 +8,7 @@ import os
 import requests
 import bs4
 from bs4 import BeautifulSoup
+import psycopg2
 
 
 class School(commands.Cog):
@@ -28,6 +29,14 @@ class School(commands.Cog):
         }
         service_account = gspread.service_account_from_dict(credentials)
         self.spreadsheet = service_account.open("Schedules")
+        # Postgres connection
+        with psycopg2.connect(
+                dbname=os.environ['DATABASE_NAME'],
+                user=os.environ['DATABASE_USER'],
+                password=os.environ['DATABASE_PASSWORD']
+        ) as connection:
+            connection.autocommit = True
+            self.cursor = connection.cursor()
 
     @staticmethod
     async def date_format(date: datetime):
@@ -38,83 +47,31 @@ class School(commands.Cog):
         }
         return week[datetime.strftime(date, '%a')].capitalize() + datetime.strftime(date, ' %d.%m.%y')
 
-    async def update_db(self, date: datetime, schedule: dict = None, homework: dict = None, format: bool = False):
-        """Sends data to google sheets. Formats if specified
-
-        :param date: datetime - DateTime object, sheet names is dates
-        :param schedule: dict - Schedule with the same style as in get_schedule (or None)
-        :param homework: dict - Homework with the same style as in get_homework (or None)
-        :param format: bool - Boolean value indicating the need to update the table style
-        """
-        # Get worksheet object from opened spreadsheet
-        date = datetime.strftime(date, '%d.%m.%y')
-        try:
-            worksheet = self.spreadsheet.add_worksheet(title=date, rows='25', cols='11')
-        except gspread.exceptions.APIError:
-            worksheet = self.spreadsheet.worksheet(title=date)
-
-        # Update schedule
-        if schedule:
-            worksheet.update('A1:K1', [['Course', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])  # Header
-            worksheet.update('A2:K17', [[key] + value for key, value in schedule.items()])  # Content
-
-        # Update homework
-        if homework:
-            worksheet.update('A18:D18', [['Name', 'Content', 'Files', 'Source']])  # Header
-            rows = []
-            for key, value in homework.items():
-                homework[key]['content'] = homework[key]['content'].replace('\n', '\\n')
-                homework[key]['files'] = ', '.join(homework[key]['files'])
-                rows.append([key] + list(value.values()))
-            worksheet.update('A19:D25', rows)  # Content
-
-        # Set worksheet style
-        if format:
-            worksheet.format('A1:K25', {'wrapStrategy': 'CLIP'})  # Wrapping style for the whole table
-            for cords in ('B2:K17', 'B19:D25'):  # Contents' borders
-                worksheet.format(cords, {
-                    'textFormat': {'fontSize': 9},
-                    'borders': {
-                        'top': {'style': 'SOLID'}, 'bottom': {'style': 'SOLID'},
-                        'left': {'style': 'SOLID'}, 'right': {'style': 'SOLID'}
-                    }
-                })
-            for cords in ('A1:K1', 'A18:D18', 'A1:A25'):  # Headers' borders
-                worksheet.format(cords, {
-                    'borders': {
-                        'top': {'style': 'SOLID', 'width': 2}, 'bottom': {'style': 'SOLID', 'width': 2},
-                        'left': {'style': 'SOLID', 'width': 2}, 'right': {'style': 'SOLID', 'width': 2}
-                    },
-                    'horizontalAlignment': 'RIGHT',
-                    'textFormat': {'bold': True}
-                })
-            for cords in ('A1:K1', 'A18:D18'):  # Top headers' text style
-                worksheet.format(cords, {'horizontalAlignment': 'CENTER', 'textFormat': {'fontSize': 12}})
-
-    async def get_homework(self, date: datetime):
+    async def get_homework(self, guild: int, date: datetime):
         """Returns homework for a given date
 
+        :param guild: int - Guild's ID
         :param date: datetime - DateTime object
         :return: dict - {lesson: {content: str, files: list, source: str}, }
         """
-        lessons = {
-            '📙physics': 'Физика', '📙maths': 'Математика', '📙ict': 'Информатика',
-            '📗russian': 'Русский', '📗english': 'Английский',
-            '📕literature': 'Литература', '📕history': 'История',
-            '📘biology': 'Биология', '📘chemistry': 'Химия',
-            '📒astronomy': 'Астрономия', '📒geography': 'География',
-        }
+        # Get channels with homework from DB
+        self.cursor.execute(
+            "SELECT channel_id, lesson_name FROM channel WHERE guild_id=%s AND lesson_name IS NOT NULL;", (guild, )
+        )
+        selected = self.cursor.fetchall()
+
+        # Main loop
         homework = {}
-        for channel in self.bot.get_channel(self.bot.HomeworkID).text_channels:
+        for channel_id, lesson in selected:
+            channel = self.bot.get_channel(channel_id)
             async for message in channel.history():
                 if "дз" in message.content and datetime.strftime(date, '%d.%m.%y') in message.content:
-                    lesson = lessons[str(message.channel)]
                     content = ''
                     if '\n' in message.content:
                         content = message.content[message.content.find('\n'):]  # Cut off the title
                     files = [file.url for file in message.attachments]
                     src = message.jump_url
-                    homework[lesson] = {'content': content, 'files': files, 'source': src}
+                    homework[lesson.capitalize()] = {'content': content, 'files': files, 'source': src}
                     break
 
         return homework
@@ -175,44 +132,53 @@ class School(commands.Cog):
         """Schedule distribution
         Sends timetable and homework for the 11m course to the #Schedule channel.
         """
-        channel = self.bot.get_channel(self.bot.ScheduleID)  # Schedule channel
+        # Get distribution channels from DB
+        self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule=True;")
+        channel_ids = self.cursor.fetchall()
+        channels = [self.bot.get_channel(channel_id[0]) for channel_id in channel_ids]  # discord.Channel objects
 
         # Get tomorrow date (or monday if tomorrow is weekend)
         date = datetime.today() + timedelta(days=1)
         if date.weekday() > 4:
             date += timedelta(days=7 - date.weekday())
 
-        # Avoid existing message
-        async for message in channel.history(limit=None):  # Avoid existing messages
-            if datetime.strftime(date, '%d.%m.%y') in message.embeds[0].title:
-                return
-
-        # Get data
+        # Get schedule data
         timetable = await self.get_schedule(date=date)
         if not isinstance(timetable, dict):
             return
-        homework = await self.get_homework(date=date)
 
-        # Message create
-        title = await self.date_format(date=date)
-        embed = discord.Embed(title=title, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
-        for index, lesson in enumerate(timetable['11м']):
-            embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
-        for lesson, hw in homework.items():
-            if lesson[:3].lower() in embed.description.lower():
-                value = hw['content']
-                if hw['files']:
-                    value += "\nПрикреплённые файлы: "
-                    for index, link in enumerate(hw['files']):
-                        value += f"[№{index + 1}]({link})"
-                        value += ', ' if index + 1 < len(hw['files']) else ''
-                embed.add_field(name=lesson, value=value, inline=False)
-        embed.url = self.bot.ScheduleURL
+        # Main loop
+        for channel in channels:
+            # Avoid existing message
+            async for message in channel.history(limit=None):
+                try:
+                    if datetime.strftime(date, '%d.%m.%y') in message.embeds[0].title:
+                        return
+                except (TypeError, IndexError):  # Not schedule message
+                    continue
 
-        # Send message and update DB
-        message = await channel.send(embed=embed)
-        await message.add_reaction(emoji='🔄')
-        await self.update_db(date=date, schedule=timetable, homework=homework, format=True)
+            # Get homework
+            homework = await self.get_homework(guild=channel.guild.id, date=date)
+
+            # Message create
+            title = await self.date_format(date=date)
+            embed = discord.Embed(title=title, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
+            for index, lesson in enumerate(timetable['11м']):  # Schedule
+                embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
+            for lesson, hw in homework.items():  # Homework
+                if lesson[:3].lower() in embed.description.lower():
+                    value = hw['content']
+                    if hw['files']:
+                        value += "\nПрикреплённые файлы: "
+                        for index, link in enumerate(hw['files']):
+                            value += f"[№{index + 1}]({link})"
+                            value += ', ' if index + 1 < len(hw['files']) else ''
+                    embed.add_field(name=lesson, value=value, inline=False)
+            embed.url = self.bot.ScheduleURL
+
+            # Send message and add refresh button
+            message = await channel.send(embed=embed)
+            await message.add_reaction(emoji='🔄')
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -228,8 +194,13 @@ class School(commands.Cog):
         member = payload.member
         reaction = payload.emoji
 
-        # Work only with #Schedule, avoiding bot's reactions
-        if channel.id != self.bot.ScheduleID:
+        # Get schedule channels from DB
+        self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule=True;")
+        selected = self.cursor.fetchall()
+        channels = [channel_id[0] for channel_id in selected]
+
+        # Work only with schedule channels, avoiding bot's reactions
+        if channel.id not in channels:
             return
         if member == self.bot.user:
             return
@@ -242,7 +213,7 @@ class School(commands.Cog):
         embed.clear_fields()
 
         # Update homework
-        homework = await self.get_homework(date=date)
+        homework = await self.get_homework(guild=channel.guild.id, date=date)
         for lesson, hw in homework.items():
             if lesson[:3].lower() in embed.description.lower():
                 value = hw['content']
@@ -256,7 +227,82 @@ class School(commands.Cog):
         # Edit message and update DB
         await message.edit(embed=embed)
         await message.remove_reaction(emoji=reaction, member=member)
-        await self.update_db(date=date, homework=homework)
+
+    @commands.command(
+        name="toggle_schedule",
+        brief="toggle_schedule [channel]",
+        usage=[
+            ["channel", "required", "Channel mention (use '#channel-name' or ID)"]
+        ],
+        description="Set or unset channel to which schedule'll be sent"
+    )
+    async def toggle_schedule(self, ctx, channel: discord.TextChannel):
+        # Get channel ID or None
+        self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule AND guild_id=%s;", (channel.guild.id, ))
+        current_id = self.cursor.fetchone()
+
+        # Change state
+        message = f"Now the schedule will be sent to {channel.mention}"
+        if not current_id:  # First setup
+            self.cursor.execute("UPDATE channel SET is_schedule=True WHERE channel_id=%s;", (channel.id, ))
+        elif current_id[0] != channel.id:  # Change channel
+            self.cursor.execute("UPDATE channel SET is_schedule=False WHERE channel_id=%s;", (current_id[0], ))
+            self.cursor.execute("UPDATE channel SET is_schedule=True WHERE channel_id=%s;", (channel.id, ))
+        else:  # Delete distribution
+            message = "Now the schedule will not be sent"
+            self.cursor.execute("UPDATE channel SET is_schedule=False WHERE channel_id=%s;", (channel.id, ))
+
+        # Send message
+        embed = discord.Embed(description=message, color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
+
+    @commands.command(
+        name="set_lesson",
+        brief="set_lesson [channel] (lesson_name)",
+        usage=[
+            ["channel", "required", "Channel mention (use '#channel-name' or ID)"],
+            ["lesson_name", "optional", "Lesson name or nothing if you want to unset"]
+        ],
+        description="Set lesson name for the channel from where homework will be collected"
+    )
+    async def set_lesson(self, ctx, channel: discord.TextChannel, lesson: str):
+        # Change state
+        lesson = lesson.lower()
+        message = f"Now I will look for **{lesson}** homework In the **{channel.mention}**"
+        try:
+            self.cursor.execute("UPDATE channel SET lesson_name=%s WHERE channel_id=%s;", (lesson, channel.id))
+        except psycopg2.errors.ForeignKeyViolation:
+            raise commands.BadArgument("Name is incorrect\nFind out the list of available lessons using `get_lessons`")
+
+        # Send message
+        embed = discord.Embed(description=message, color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
+
+    @commands.command(
+        name="unset_lesson",
+        brief="unset_lesson [channel]",
+        usage=[
+            ["channel", "required", "Channel mention (use '#channel-name' or ID)"],
+        ],
+        description="Stop collecting homework from channel"
+    )
+    async def unset_lesson(self, ctx, channel: discord.TextChannel):
+        self.cursor.execute("UPDATE channel SET lesson_name=NULL WHERE channel_id=%s;", (channel.id, ))
+        message = f"Now the **{channel.mention}** is not related to homework"
+        embed = discord.Embed(description=message, color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
+
+    @commands.command(
+        name="get_lessons",
+        brief="get_lessons",
+        usage=[],
+        description="Sends a list of all available lessons"
+    )
+    async def get_lessons(self, ctx):
+        self.cursor.execute("SELECT lesson_name FROM lesson;")
+        lessons = [lesson[0].capitalize() for lesson in self.cursor.fetchall()]
+        embed = discord.Embed(title="Available lessons", description='\n'.join(lessons), color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
 
     @commands.command(
         name="schedule",
@@ -275,7 +321,8 @@ class School(commands.Cog):
         :param date: str - Date in DD.MM.YY format (today as default)
         """
         # Argument error handler
-        courses = ('5а', '5б', '6а', '6б', '7а', '7б', '8а', '8б', '9а', '9б', '10м', '10х', '10э', '11м', '11х', '11э')
+        self.cursor.execute("SELECT course_name FROM course")
+        courses = [course[0] for course in self.cursor.fetchall()]
         if course not in courses:
             raise commands.BadArgument("Incorrect course")
         try:
@@ -294,6 +341,7 @@ class School(commands.Cog):
         for index, lesson in enumerate(timetable[course]):
             embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
 
+        # Send message
         await ctx.send(embed=embed)
 
 

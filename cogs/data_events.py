@@ -37,7 +37,7 @@ class DataEvents(commands.Cog):
                 category_id = channel.category.id if channel.category else None
                 is_system = channel.id == guild.system_channel.id if guild.system_channel else False
                 self.cursor.execute(
-                    "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, False, %s, NULL);",
+                    "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, False, False, NULL, %s);",
                     (channel.id, guild.id, category_id, channel.name, str(channel.type), is_system)
                 )
 
@@ -68,7 +68,7 @@ class DataEvents(commands.Cog):
         if isinstance(channel, discord.TextChannel) or isinstance(channel, discord.VoiceChannel):
             category_id = channel.category.id if channel.category else None
             self.cursor.execute(
-                "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, False, False, NULL);",
+                "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, False, False, NULL, False);",
                 (channel.id, channel.guild.id, category_id, channel.name, str(channel.type))
             )
         elif isinstance(channel, discord.CategoryChannel):
