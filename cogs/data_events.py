@@ -3,6 +3,7 @@
 import discord
 from discord.ext import commands
 import psycopg2
+from urllib.parse import urlparse
 import os
 
 
@@ -10,14 +11,18 @@ class DataEvents(commands.Cog):
     """Responsible for the automatic collection of data"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
         # Postgres connection
+        result = urlparse(os.environ['DATABASE_URL'])
         with psycopg2.connect(
-                dbname=os.environ['DATABASE_NAME'],
-                user=os.environ['DATABASE_USER'],
-                password=os.environ['DATABASE_PASSWORD']
-        ) as self.connection:
-            self.connection.autocommit = True
-            self.cursor = self.connection.cursor()
+            dbname=result.path[1:],
+            user=result.username,
+            password=result.password,
+            host=result.hostname,
+            port=result.port
+        ) as connection:
+            connection.autocommit = True
+            self.cursor = connection.cursor()
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild):

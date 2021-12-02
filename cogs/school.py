@@ -3,37 +3,27 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
-import gspread
 import os
 import requests
 import bs4
 from bs4 import BeautifulSoup
 import psycopg2
+from urllib.parse import urlparse
 
 
 class School(commands.Cog):
     """A module for interacting with homework and schedule"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        credentials = {
-            "type": "service_account",
-            "project_id": os.environ['GOOGLE_PROJECT_ID'],
-            "private_key_id": os.environ["GOOGLE_PRIVATE_KEY_ID"],
-            "private_key": os.environ["GOOGLE_PRIVATE_KEY"].replace('\\n', '\n'),
-            "client_email": os.environ["GOOGLE_CLIENT_EMAIL"],
-            "client_id": os.environ["GOOGLE_CLIENT_ID"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.environ['GOOGLE_CLIENT_X509_CERT_URL']
-        }
-        service_account = gspread.service_account_from_dict(credentials)
-        self.spreadsheet = service_account.open("Schedules")
+
         # Postgres connection
+        result = urlparse(os.environ['DATABASE_URL'])
         with psycopg2.connect(
-                dbname=os.environ['DATABASE_NAME'],
-                user=os.environ['DATABASE_USER'],
-                password=os.environ['DATABASE_PASSWORD']
+            dbname=result.path[1:],
+            user=result.username,
+            password=result.password,
+            host=result.hostname,
+            port=result.port
         ) as connection:
             connection.autocommit = True
             self.cursor = connection.cursor()
