@@ -219,6 +219,30 @@ class School(commands.Cog):
         await message.remove_reaction(emoji=reaction, member=member)
 
     @commands.command(
+        name="set_course",
+        brief="set_course [course]",
+        usage=[
+            ["course", "required", "Course name as it written in the schedule (e.g. '11м')"]
+        ],
+        description="Set course name to your guild"
+    )
+    async def set_course(self, ctx, course: str):
+        """Sets course_name in channel table
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param course: str - Course name (e.g. '11м')
+        """
+        # Update DB
+        try:
+            self.cursor.execute("UPDATE guild SET course_name=%s WHERE guild_id=%s;", (course, ctx.guild.id))
+        except psycopg2.errors.ForeignKeyViolation:
+            raise commands.BadArgument("Name is incorrect")
+
+        # Send message
+        embed = discord.Embed(description=f"Course of this server is set as **{course}**", color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
+
+    @commands.command(
         name="toggle_schedule",
         brief="toggle_schedule [channel]",
         usage=[
