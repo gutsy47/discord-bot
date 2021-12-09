@@ -96,7 +96,7 @@ class DataEvents(commands.Cog):
                 (after.name, category_id, after.id)
             )
         elif isinstance(before, discord.CategoryChannel):
-            self.cursor.execute("UPDATE category SET category_name=%s WHERE category.id=%s;", (after.name, after.id))
+            self.cursor.execute("UPDATE category SET category_name=%s WHERE category_id=%s;", (after.name, after.id))
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.GroupChannel):
