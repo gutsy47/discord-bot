@@ -2,7 +2,6 @@
 """
 TODO: Temp commands
 TODO: Server stats
-TODO: Server/User info by command
 """
 import discord
 from discord.ext import commands
@@ -92,7 +91,9 @@ class Moderator(commands.Cog):
         :param member: discord.Member - Guild member (error if not in it)
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
         """
-        if member.guild_permissions.administrator or ctx.author.top_role <= member.top_role:
+        if member.guild_permissions.administrator:
+            raise commands.BadArgument("I can't kick/ban/mute administrator")
+        if ctx.author != ctx.guild.owner and ctx.author.top_role <= member.top_role:
             raise commands.MissingRole
 
         embed = discord.Embed(description=f"**Reason:** {reason}", color=self.bot.ColorDefault)
@@ -160,8 +161,8 @@ class Moderator(commands.Cog):
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
         """
         if member.guild_permissions.administrator:
-            raise commands.MissingRole
-        if ctx.author.top_role <= member.top_role:
+            raise commands.BadArgument("I can't kick/ban/mute administrator")
+        if ctx.author != ctx.guild.owner and ctx.author.top_role <= member.top_role:
             raise commands.MissingRole
 
         embed = discord.Embed(description=f"**Reason:** {reason}", color=self.bot.ColorDefault)
@@ -194,8 +195,8 @@ class Moderator(commands.Cog):
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
         """
         if member.guild_permissions.administrator:
-            raise commands.MissingRole
-        if ctx.author.top_role <= member.top_role:
+            raise commands.BadArgument("I can't kick/ban/mute administrator")
+        if ctx.author != ctx.guild.owner and ctx.author.top_role <= member.top_role:
             raise commands.MissingRole
 
         muted_role = get(ctx.guild.roles, name='muted')
@@ -271,31 +272,6 @@ class Moderator(commands.Cog):
         author = ctx.author.mention
         whose = f" of {member.mention}" if member else ''
         embed = discord.Embed(description=f"{author} deleted {deleted} messages{whose}", color=self.bot.ColorDefault)
-        await ctx.send(embed=embed)
-
-    @commands.command(
-        name="toggle",
-        brief="toggle [command]",
-        usage=[
-            ["command", "required", "Just a command name"]
-        ],
-        description="Turns command on/off"
-    )
-    @commands.has_permissions(administrator=True)
-    async def toggle(self, ctx, command):
-        """Turns command on/off
-
-        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
-        :param command: str - Command object to toggle (error if this command, will be changed to commands.Command)
-        """
-        command = self.bot.get_command(command)
-        if command == ctx.command:
-            embed = discord.Embed(title="Something went wrong", color=self.bot.ColorError)
-            embed.description = "🚫That's not good idea"
-        else:
-            command.enabled = not command.enabled
-            ternary = "Enabled" if command.enabled else "Disabled"
-            embed = discord.Embed(description=f"{ternary} **{command.qualified_name}**", color=self.bot.ColorDefault)
         await ctx.send(embed=embed)
 
     @commands.command(

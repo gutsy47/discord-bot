@@ -2,7 +2,9 @@
 
 import discord
 from discord.ext import commands
-from os import listdir
+import psycopg2
+from urllib.parse import urlparse
+import os
 
 
 class Settings(commands.Cog):
@@ -10,54 +12,36 @@ class Settings(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(
-        name="toggle_module",
-        brief="toggle_module [extension]",
-        usage=[
-            ["extension", "required", "Extension name"],
-        ],
-        description="Turns a module on/off",
-        hidden=True
-    )
-    @commands.is_owner()
-    async def toggle_module(self, ctx, extension: str):
-        """Turns a module on/off
-
-        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
-        :param extension: str - Extension name
-        """
-        try:
-            self.bot.load_extension(f'cogs.{extension}')
-            embed = discord.Embed(description=f"**{extension.capitalize()}** was loaded", color=self.bot.ColorDefault)
-        except commands.ExtensionAlreadyLoaded:
-            self.bot.unload_extension(f'cogs.{extension}')
-            embed = discord.Embed(description=f"**{extension.capitalize()}** was unloaded", color=self.bot.ColorDefault)
-        await ctx.send(embed=embed)
+        # Postgres connection
+        result = urlparse(os.environ['DATABASE_URL'])
+        with psycopg2.connect(
+                dbname=result.path[1:],
+                user=result.username,
+                password=result.password,
+                host=result.hostname,
+                port=result.port
+        ) as connection:
+            connection.autocommit = True
+            self.cursor = connection.cursor()
 
     @commands.command(
-        name="reload",
-        brief="reload [extension]",
-        usage=[
-            ["extension", "required", "Can be used 'all' or fill empty"]
-        ],
-        description="Reloads an extension (applies code changes)",
-        hidden=True
+        name="toggle_greetings",
+        brief="toggle_greetings",
+        description="Turns on/off notification system for member join/remove in the system channel",
     )
-    @commands.is_owner()
-    async def reload(self, ctx, extension: str = "all"):
-        """Reloads a cog (applies code changes)
+    @commands.has_permissions(administrator=True)
+    async def toggle_greetings(self, ctx):
+        """Turns greetings on guild on/off"""
+        # Update database
+        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (ctx.guild.id,))
+        is_greetings = not self.cursor.fetchone()[0]
+        self.cursor.execute("UPDATE guild SET is_greetings=%s WHERE guild_id=%s;", (is_greetings, ctx.guild.id))
 
-        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
-        :param extension: str - Extension name
-        """
-        if extension == 'all':
-            for filename in listdir('./cogs'):
-                if filename.endswith('.py'):
-                    self.bot.reload_extension(f'cogs.{filename[:-3]}')
-        else:
-            self.bot.reload_extension(f'cogs.{extension}')
-        embed = discord.Embed(color=self.bot.ColorDefault)
-        embed.description = f"**{extension.capitalize()}** module(s) was updated"
+        # Send message
+        answer = '' if is_greetings else '**not**'
+        embed = discord.Embed(description=f"Now I'll {answer} take care of greetings", color=self.bot.ColorDefault)
+        if not ctx.guild.system_channel:
+            embed.set_footer(text="Set the system channel in the server settings so that I can do it")
         await ctx.send(embed=embed)
 
 

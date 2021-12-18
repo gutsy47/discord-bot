@@ -43,7 +43,7 @@ class DataEvents(commands.Cog):
                 category_id = channel.category.id if channel.category else None
                 is_system = channel.id == guild.system_channel.id if guild.system_channel else False
                 self.cursor.execute(
-                    "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, False, False, NULL, %s);",
+                    "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, NULL, %s);",
                     (channel.id, guild.id, category_id, channel.name, str(channel.type), is_system)
                 )
 
@@ -56,20 +56,42 @@ class DataEvents(commands.Cog):
             )
             is_owner = member.id == member.guild.owner_id
             self.cursor.execute(
-                "INSERT INTO member VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;",
+                "INSERT INTO member VALUES (%s, %s, %s, %s, %s);",
                 (member.id, member.guild.id, member.display_name, is_owner, member.joined_at)
             )
 
     @commands.Cog.listener()
     async def on_guild_update(self, before: discord.Guild, after: discord.Guild):
         """Called when a guild changes: name, AFK channel, AFK timeout, etc"""
+        if before.system_channel != after.system_channel:
+            if before.system_channel:
+                self.cursor.execute(
+                    "UPDATE channel SET is_system=False WHERE channel_id=%s;", (before.system_channel.id, )
+                )
+            if after.system_channel:
+                self.cursor.execute(
+                    "UPDATE channel SET is_system=True WHERE channel_id=%s;", (after.system_channel.id, )
+                )
         if before.name != after.name:
             self.cursor.execute("UPDATE guild SET guild_name=%s WHERE guild_id=%s;", (after.name, after.id))
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild):
         """Called when a guild is removed from the client"""
-        self.cursor.execute("DELETE FROM guild WHERE guild_id=%s;", (guild.id,))
+        # Current guild members
+        self.cursor.execute("SELECT user_id FROM member WHERE guild_id=%s;", (guild.id, ))
+        guild_members = tuple(user_id[0] for user_id in self.cursor.fetchall())
+
+        # Guild remove
+        self.cursor.execute("DELETE FROM guild WHERE guild_id=%s;", (guild.id, ))  # Guild remove
+
+        # Same users in another guilds
+        self.cursor.execute("SELECT user_id FROM member WHERE user_id IN %s;", (guild_members, ))
+        another_guild_members = tuple(user_id[0] for user_id in self.cursor.fetchall())
+
+        # Users without member objects remove
+        deleted_users = tuple(member for member in guild_members if member not in another_guild_members)
+        self.cursor.execute("DELETE FROM \"user\" WHERE user_id IN %s;", (deleted_users, ))
 
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel):
@@ -77,7 +99,7 @@ class DataEvents(commands.Cog):
         if isinstance(channel, discord.TextChannel) or isinstance(channel, discord.VoiceChannel):
             category_id = channel.category.id if channel.category else None
             self.cursor.execute(
-                "INSERT INTO channel VALUES (%s, %s, %s, %s, %s, False, False, NULL, False);",
+                "INSERT INTO channel VALUES (%s, %s, %s, %s, %s);",
                 (channel.id, channel.guild.id, category_id, channel.name, str(channel.type))
             )
         elif isinstance(channel, discord.CategoryChannel):
@@ -160,26 +182,6 @@ class DataEvents(commands.Cog):
             "UPDATE \"user\" SET user_name=%s, user_discriminator=%s WHERE user_id=%s;",
             (after.name, after.discriminator, after.id)
         )
-
-    @commands.command(
-        name="toggle_greetings",
-        brief="toggle_greetings",
-        description="Turns on/off notification system for member join/remove in the system channel",
-    )
-    @commands.has_permissions(administrator=True)
-    async def toggle_greetings(self, ctx):
-        """Turns greetings on guild on/off"""
-        # Update database
-        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (ctx.guild.id,))
-        is_greetings = not self.cursor.fetchone()[0]
-        self.cursor.execute("UPDATE guild SET is_greetings=%s WHERE guild_id=%s;", (is_greetings, ctx.guild.id))
-
-        # Send message
-        answer = '' if is_greetings else '**not**'
-        embed = discord.Embed(description=f"Now I'll {answer} take care of greetings", color=self.bot.ColorDefault)
-        if not ctx.guild.system_channel:
-            embed.set_footer(text="Set the system channel in the server settings so that I can do it")
-        await ctx.send(embed=embed)
 
 
 def setup(bot):

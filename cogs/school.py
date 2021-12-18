@@ -35,9 +35,11 @@ class School(commands.Cog):
             'Mon': 'понедельник', 'Tue': 'вторник', 'Wed': 'среда', 'Thu': 'четверг', 'Fri': 'пятница',
             'Sat': 'суббота', 'Sun': 'воскресенье'
         }
-        return week[datetime.strftime(date, '%a')].capitalize() + datetime.strftime(date, ' %d.%m.%y')
+        return week[date.strftime('%a')].capitalize() + date.strftime(' %d.%m.%y')
 
     async def get_homework(self, guild: int, date: datetime):
+        # TODO: From date1 to date2
+        # TODO: CHW with obj
         """Returns homework for a given date
 
         :param guild: int - Guild's ID
@@ -55,7 +57,7 @@ class School(commands.Cog):
         for channel_id, lesson in selected:
             channel = self.bot.get_channel(channel_id)
             async for message in channel.history():
-                if "дз" in message.content and datetime.strftime(date, '%d.%m.%y') in message.content:
+                if "дз" in message.content and date.strftime('%d.%m.%y') in message.content:
                     content = ''
                     if '\n' in message.content:
                         content = message.content[message.content.find('\n'):]  # Cut off the title
@@ -115,10 +117,11 @@ class School(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        self.homework_and_schedule.start()
+        self.schedule_distribution.start()
 
     @tasks.loop(minutes=15)
-    async def homework_and_schedule(self):
+    async def schedule_distribution(self):
+        # TODO: Remove redundant check if in schedule
         """Schedule distribution
         Sends timetable and homework for all guilds to the schedule channel.
         """
@@ -142,36 +145,38 @@ class School(commands.Cog):
             # Avoid existing message
             async for message in channel.history(limit=None):
                 try:
-                    if datetime.strftime(date, '%d.%m.%y') in message.embeds[0].title:
-                        return
+                    if date.strftime('%d.%m.%y') in message.embeds[0].title:
+                        break
                 except (TypeError, IndexError):  # Not schedule message
                     continue
+            else:
+                # Get homework
+                homework = await self.get_homework(guild=channel.guild.id, date=date)
 
-            # Get homework
-            homework = await self.get_homework(guild=channel.guild.id, date=date)
+                # Message create
+                date = await self.date_format(date=date)
+                embed = discord.Embed(title=date, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
+                for index, lesson in enumerate(timetable['11м']):  # Schedule
+                    embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
+                for lesson, hw in homework.items():  # Homework
+                    if lesson[:3].lower() in embed.description.lower():
+                        value = hw['content']
+                        if hw['files']:
+                            value += "\nПрикреплённые файлы: "
+                            for index, link in enumerate(hw['files']):
+                                value += f"[№{index + 1}]({link})"
+                                value += ', ' if index + 1 < len(hw['files']) else ''
+                        if value:
+                            embed.add_field(name=lesson, value=value, inline=False)
+                embed.url = self.bot.ScheduleURL
 
-            # Message create
-            title = await self.date_format(date=date)
-            embed = discord.Embed(title=title, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
-            for index, lesson in enumerate(timetable['11м']):  # Schedule
-                embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
-            for lesson, hw in homework.items():  # Homework
-                if lesson[:3].lower() in embed.description.lower():
-                    value = hw['content']
-                    if hw['files']:
-                        value += "\nПрикреплённые файлы: "
-                        for index, link in enumerate(hw['files']):
-                            value += f"[№{index + 1}]({link})"
-                            value += ', ' if index + 1 < len(hw['files']) else ''
-                    embed.add_field(name=lesson, value=value, inline=False)
-            embed.url = self.bot.ScheduleURL
-
-            # Send message and add refresh button
-            message = await channel.send(embed=embed)
-            await message.add_reaction(emoji='🔄')
+                # Send message and add refresh button
+                message = await channel.send(embed=embed)
+                await message.add_reaction(emoji='🔄')
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        # TODO: Remove redundant check if in schedule
         """Updates homework in reaction message
 
         :param payload: discord.RawReactionActionEvent - The raw event payload data
@@ -217,6 +222,46 @@ class School(commands.Cog):
         # Edit message and update DB
         await message.edit(embed=embed)
         await message.remove_reaction(emoji=reaction, member=member)
+
+    @commands.command(
+        name="schedule",
+        brief="schedule [course] (date)",
+        usage=[
+            ["course", "required", "Format as on school website"],
+            ["date", "optional", "DD.MM.YY (default: today)"]
+        ],
+        description="Sends schedule"
+    )
+    async def schedule(self, ctx, course: str, date: str = None):
+        """Sends schedule for class
+
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param course: str - Course name in format as on the school website
+        :param date: str - Date in DD.MM.YY format (today as default)
+        """
+        # Argument error handler
+        self.cursor.execute("SELECT course_name FROM course")
+        courses = [course[0] for course in self.cursor.fetchall()]
+        if course not in courses:
+            raise commands.BadArgument("Incorrect course")
+        try:
+            date = datetime.strptime(date, '%d.%m.%y') if date else datetime.today()
+        except ValueError:
+            raise commands.BadArgument("**Date** should have **DD.MM.YY** format")
+
+        # Get data
+        timetable = await self.get_schedule(date=date)
+        if not isinstance(timetable, dict):
+            raise timetable
+
+        # Create message
+        title = await self.date_format(date=date) + ' ' + course
+        embed = discord.Embed(title=title, description='', color=self.bot.ColorDefault)
+        for index, lesson in enumerate(timetable[course]):
+            embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
+
+        # Send message
+        await ctx.send(embed=embed)
 
     @commands.command(
         name="set_course",
@@ -333,46 +378,6 @@ class School(commands.Cog):
         self.cursor.execute("SELECT lesson_name FROM lesson;")
         lessons = [lesson[0].capitalize() for lesson in self.cursor.fetchall()]
         embed = discord.Embed(title="Available lessons", description='\n'.join(lessons), color=self.bot.ColorDefault)
-        await ctx.send(embed=embed)
-
-    @commands.command(
-        name="schedule",
-        brief="schedule [course] (date)",
-        usage=[
-            ["course", "required", "Format as on school website"],
-            ["date", "optional", "DD.MM.YY (default: today)"]
-        ],
-        description="Sends schedule"
-    )
-    async def schedule(self, ctx, course: str, date: str = None):
-        """Sends schedule for class
-
-        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
-        :param course: str - Course name in format as on the school website
-        :param date: str - Date in DD.MM.YY format (today as default)
-        """
-        # Argument error handler
-        self.cursor.execute("SELECT course_name FROM course")
-        courses = [course[0] for course in self.cursor.fetchall()]
-        if course not in courses:
-            raise commands.BadArgument("Incorrect course")
-        try:
-            date = datetime.strptime(date, '%d.%m.%y') if date else datetime.today()
-        except ValueError:
-            raise commands.BadArgument("**Date** should have **DD.MM.YY** format")
-
-        # Get data
-        timetable = await self.get_schedule(date=date)
-        if not isinstance(timetable, dict):
-            raise timetable
-
-        # Create message
-        title = await self.date_format(date=date) + ' ' + course
-        embed = discord.Embed(title=title, description='', color=self.bot.ColorDefault)
-        for index, lesson in enumerate(timetable[course]):
-            embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
-
-        # Send message
         await ctx.send(embed=embed)
 
 

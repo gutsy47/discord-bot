@@ -64,7 +64,7 @@ bot.ScheduleURL = "http://school36.murmansk.su/izmeneniya-v-raspisanii/"
 @bot.event
 async def on_ready():
     """Is called when the bot has finished logging in and setting things up"""
-    await bot.change_presence(activity=discord.Game("Real Live"))
+    await bot.change_presence(activity=discord.Game("Real Life"))
     print(f"{bot.user.name}(ID:{bot.user.id}) online with prefix: {prefix}")
 
 
