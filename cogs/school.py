@@ -11,8 +11,8 @@ import psycopg2
 from urllib.parse import urlparse
 
 
-class School(commands.Cog):
-    """A module for interacting with homework and schedule"""
+class School(commands.Cog, name="school"):
+    """Functionality for students (schedule, homework, etc.)"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -225,27 +225,41 @@ class School(commands.Cog):
 
     @commands.command(
         name="schedule",
-        brief="schedule [course] (date)",
+        brief="Send schedule by date and course",
+        help=(
+                "Receives the timetable from the school website, "
+                "selects the specified class and sends the timetable to the channel where the command was called."
+                "\nIf the server has a specified course, then it can be not specified in command arguments."
+        ),
         usage=[
-            ["course", "required", "Format as on school website"],
-            ["date", "optional", "DD.MM.YY (default: today)"]
-        ],
-        description="Sends schedule"
+            ["date", "optional", "DD.MM.YY (default: today)"],
+            ["course", "optional", "Course in format as on school website"]
+        ]
     )
-    async def schedule(self, ctx, course: str, date: str = None):
-        """Sends schedule for class
-
-        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
-        :param course: str - Course name in format as on the school website
-        :param date: str - Date in DD.MM.YY format (today as default)
+    async def schedule(self, ctx, date: str = None, course: str = None):
         """
-        # Argument error handler
-        self.cursor.execute("SELECT course_name FROM course")
-        courses = [course[0] for course in self.cursor.fetchall()]
-        if course not in courses:
-            raise commands.BadArgument("Incorrect course")
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param date: str - Date in DD.MM.YY format (today as default)
+        :param course: str - Course name in format as on the school website
+        """
+        # Course argument
+        if course:
+            self.cursor.execute("SELECT course_name FROM course")
+            courses = [course[0] for course in self.cursor.fetchall()]
+            if course not in courses:
+                raise commands.BadArgument("Incorrect course")
+        else:
+            self.cursor.execute("SELECT course_name FROM guild WHERE guild_id=%s", (ctx.guild.id, ))
+            course = self.cursor.fetchone()
+            if not course:
+                raise commands.BadArgument("**Course** not specified in this server. Use **set_course** command")
+            course = course[0]
+
+        # Date argument
         try:
             date = datetime.strptime(date, '%d.%m.%y') if date else datetime.today()
+            if date.weekday() > 4:
+                date += timedelta(days=7 - date.weekday())
         except ValueError:
             raise commands.BadArgument("**Date** should have **DD.MM.YY** format")
 
@@ -265,15 +279,17 @@ class School(commands.Cog):
 
     @commands.command(
         name="set_course",
-        brief="set_course [course]",
+        brief="Set course name to your server",
+        help=(
+                "Bot remembers the specified class and will send out the schedule and homework "
+                "if a channels for sending schedule and collecting homework are specified."
+        ),
         usage=[
-            ["course", "required", "Course name as it written in the schedule (e.g. '11м')"]
-        ],
-        description="Set course name to your guild"
+            ["course", "required", "Course in format as on school website (e.g. '11м')"]
+        ]
     )
     async def set_course(self, ctx, course: str):
-        """Sets course_name in channel table
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param course: str - Course name (e.g. '11м')
         """
@@ -289,15 +305,18 @@ class School(commands.Cog):
 
     @commands.command(
         name="toggle_schedule",
-        brief="toggle_schedule [channel]",
+        brief="Set channel to which schedule'll be sent",
+        help=(
+                "Sets/changes/removes the specified channel as a broadcast channel. "
+                "For correct operation, the course must be specified, "
+                "you can also specify the channels from which you want to collect tasks."
+        ),
         usage=[
             ["channel", "required", "Channel mention (use '#channel-name' or ID)"]
-        ],
-        description="Set or unset channel to which schedule'll be sent"
+        ]
     )
     async def toggle_schedule(self, ctx, channel: discord.TextChannel):
-        """Sets channel to which schedule'll be sent
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param channel: discord.TextChannel - Channel mention or ID
         """
@@ -322,16 +341,21 @@ class School(commands.Cog):
 
     @commands.command(
         name="set_lesson",
-        brief="set_lesson [channel] (lesson_name)",
+        brief="Set lesson name for the channel from where homework will be collected",
+        help=(
+                "Sets the specified channel as the channel from which homework will be retrieved. "
+                "The task message must have this format:"
+                "```\nдз {день недели} {дата в формате ДД.ММ.ГГ}"
+                "\nТекст сообщения```"
+                "You can also attach files."
+        ),
         usage=[
             ["channel", "required", "Channel mention (use '#channel-name' or ID)"],
             ["lesson_name", "optional", "Lesson name or nothing if you want to unset"]
-        ],
-        description="Set lesson name for the channel from where homework will be collected"
+        ]
     )
     async def set_lesson(self, ctx, channel: discord.TextChannel, lesson: str):
-        """Sets channel from which homework'll be received
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param channel: discord.TextChannel - Channel mention or ID
         :param lesson: str - Lesson name according to the course table
@@ -350,15 +374,17 @@ class School(commands.Cog):
 
     @commands.command(
         name="unset_lesson",
-        brief="unset_lesson [channel]",
+        brief="Return the usual properties for the channel",
+        help=(
+                "Returns the usual properties for the channel. "
+                "Messages from here will no longer be checked for the **дз** keyword"
+        ),
         usage=[
-            ["channel", "required", "Channel mention (use '#channel-name' or ID)"],
-        ],
-        description="Stop collecting homework from channel"
+            ["channel", "required", "Channel mention (use '#channel-name' or ID)"]
+        ]
     )
     async def unset_lesson(self, ctx, channel: discord.TextChannel):
-        """Removes channel homework from DB
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param channel: discord.TextChannel - Channel mention or ID
         """
@@ -369,12 +395,14 @@ class School(commands.Cog):
 
     @commands.command(
         name="get_lessons",
-        brief="get_lessons",
-        usage=[],
-        description="Sends a list of all available lessons"
+        brief="Send a list of all available lessons",
+        help=(
+                "Returns a list of all lessons reviewed by the administrator. "
+                "If the list is missing something, write **gutsy#9100** (Bot owner)"
+        ),
+        usage=[]
     )
     async def get_lessons(self, ctx):
-        """Sends a list of all available lessons from DB"""
         self.cursor.execute("SELECT lesson_name FROM lesson;")
         lessons = [lesson[0].capitalize() for lesson in self.cursor.fetchall()]
         embed = discord.Embed(title="Available lessons", description='\n'.join(lessons), color=self.bot.ColorDefault)
