@@ -10,36 +10,64 @@ class HelpCommand(commands.HelpCommand):
 
     async def send_bot_help(self, mapping):
         """Sends a list of modules"""
+        # Create embed
         embed = discord.Embed(color=bot.ColorDefault)
         embed.set_author(name=f"{bot.user.name}'s modules", icon_url=bot.user.avatar_url)
+        embed.set_footer(text="Use -help [module name] for more info")
+
+        # Add cogs
         for cog in mapping:
             if cog:
                 for command in cog.get_commands():
                     if not command.hidden:
-                        embed.add_field(name=cog.qualified_name, value=f"`-help {cog.qualified_name}`", inline=True)
+                        embed.add_field(name=cog.qualified_name.capitalize(), value=f"{cog.description}", inline=False)
                         break
+
+        # Send message
         await self.get_destination().send(embed=embed)
 
     async def send_cog_help(self, cog):
         """Sends a list of extension commands and a short description"""
-        embed = discord.Embed(title=f"{cog.qualified_name} extension", color=bot.ColorDefault)
+        # Create embed
+        embed = discord.Embed(
+            title=f"{cog.qualified_name.capitalize()} extension",
+            description=cog.description,
+            color=bot.ColorDefault,
+        )
+        embed.set_footer(text="Use -help [command name] for more info on a command")
+
+        # Add commands
         for command in cog.get_commands():
             if not command.hidden:
-                embed.add_field(name=f"`{command.brief}`", value=command.description, inline=False)
-        if embed.fields:
-            await self.get_destination().send(embed=embed)
+                name = command.name
+                if command.usage:
+                    name += ' ' + ' '.join(f"[{x[0]}]" if x[1] == "required" else f"({x[0]})" for x in command.usage)
+                embed.add_field(name=f"`{bot.command_prefix}{name}`", value=command.brief, inline=False)
+
+        # Send message
+        await self.get_destination().send(embed=embed)
 
     async def send_command_help(self, command):
         """Sends a detailed description of the command"""
-        embed = discord.Embed(color=bot.ColorDefault)
-        embed.add_field(name=f"Usage of {command.name} command:", value=f"`{bot.command_prefix}{command.brief}`")
-        embed.set_footer(text="Enabled" if command.enabled else "Disabled")
+        # Title and description
+        embed = discord.Embed(
+            title=f"{command.name.capitalize().replace('_', ' ')} command",
+            description=command.help,
+            color=bot.ColorDefault
+        )
+
+        # Usage and arguments
+        usage = bot.command_prefix + command.name
         if command.usage:
-            arguments = ''
-            col_width = max(len(row[0]) for row in command.usage)
-            for row in command.usage:
-                arguments += f"`{'|'.join(word.rjust(col_width) for word in row[:-1])}` {row[2]}\n"
-            embed.add_field(name=f"Arguments:", value=arguments, inline=False)
+            # Usage
+            usage += ' ' + ' '.join(f"[{x[0]}]" if x[1] == "required" else f"({x[0]})" for x in command.usage)
+            embed.add_field(name="Usage of command", value=f"`{usage}`", inline=False)
+            # Args
+            width = max(len(row[0]) for row in command.usage)
+            args = '\n'.join(f"`{'|'.join(x.rjust(width) for x in row[:-1])}` {row[2]}" for row in command.usage)
+            embed.add_field(name="Arguments", value=args, inline=False)
+
+        # Send message
         await self.get_destination().send(embed=embed)
 
     async def send_error_message(self, error):
