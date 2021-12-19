@@ -8,8 +8,8 @@ from discord.ext import commands
 from discord.utils import get
 
 
-class Moderator(commands.Cog):
-    """Provides server administration methods"""
+class Moderator(commands.Cog, name="admin"):
+    """Provides server administration functionality"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -75,18 +75,22 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="ban",
-        brief="ban [user] (reason)",
+        brief="Ban a member from the server",
+        help=(
+                "Blocks access to the server for the specified user. "
+                "He will not be able to connect via the link until the ban is removed."
+                "\nThe command is available only if you have the rights to ban. "
+                "It's not affect administrators and users whose role is higher than yours."
+        ),
         usage=[
             ["user", "required", "Member mention or ID"],
-            ["reason", "optional", "Reason, may include spaces"]
-        ],
-        description="Ban a member from the server"
+            ["reason", "optional", "Ban reason"]
+        ]
     )
     @commands.has_permissions(ban_members=True)
     @commands.guild_only()
     async def ban(self, ctx, member: discord.Member, *, reason: str = "Not specified"):
-        """Ban a member from the server, inform banned user
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param member: discord.Member - Guild member (error if not in it)
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
@@ -112,17 +116,21 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="unban",
-        brief="unban [user]",
+        brief="Unblock a banned user",
+        help=(
+                "Removes the ban from the specified user."
+                "\nIf possible, it sends a one-time invite link to the user, "
+                "Otherwise, a line informing that the message wasn't delivered will be added. "
+                "(The bot can write only to those users who allow it)"
+        ),
         usage=[
-            ["user", "required", "Banned user mention or ID"],
-        ],
-        description="Unban a member from the server"
+            ["user", "required", "Banned user mention or ID"]
+        ]
     )
     @commands.has_permissions(ban_members=True)
     @commands.guild_only()
     async def unban(self, ctx, user: discord.User):
-        """Unban a member from the server
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param user: discord.User - User which was banned (error if not banned)
         """
@@ -144,18 +152,22 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="kick",
-        brief="kick [user] (reason)",
+        brief="Kick a member from the server",
+        help=(
+                "Removes a user from the server. "
+                "He will be able to return to any working invite link."
+                "\nThe command is available only if you have the rights to kick. "
+                "It's not affect on administrators and users whose role is higher than yours."
+        ),
         usage=[
             ["user", "required", "Member mention or ID"],
-            ["reason", "optional", "Reason, may include spaces"]
-        ],
-        description="Kick a member from the server"
+            ["reason", "optional", "Kick reason"]
+        ]
     )
     @commands.has_permissions(kick_members=True)
     @commands.guild_only()
     async def kick(self, ctx, member: discord.Member, *, reason: str = "Not specified"):
-        """Kick a member from the server
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param member: discord.Member - Guild member (error if not in it)
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
@@ -178,18 +190,24 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="mute",
-        brief="mute [user] (reason)",
+        brief="Mute a member in the server",
+        help=(
+                "Creates or updates a `muted` role and issues it to the user. "
+                "The user will be able to see messages and connect to the voice channels, "
+                "but will not be able to write or speak."
+                "\nThe command is available only if you have the rights to manage roles. "
+                "It's not affect on administrators and users whose role is higher than yours."
+        ),
         usage=[
             ["user", "required", "Member mention or ID"],
-            ["reason", "optional", "Reason, may include spaces"]
-        ],
-        description="Mute a member in the server"
+            ["reason", "optional", "Mute reason"]
+        ]
     )
     @commands.has_permissions(manage_roles=True)
     @commands.guild_only()
     async def mute(self, ctx, member: discord.Member, *, reason: str = "Not specified"):
-        """Mute a member in the server
-
+        # TODO: Автоматическое создание и настройка роли muted (с учетом появления новых серверов)
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param member: discord.Member - Guild member (error if not in it)
         :param reason: str - Ban reason, may include spaces (default = "Not specified")
@@ -211,11 +229,14 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="unmute",
-        brief="unmute [user]",
+        brief="Unmute a member in the server",
+        help=(
+                "Just removes the `muted` role from the user "
+                "\nThe command is available only if you have the rights to manage roles. "
+        ),
         usage=[
-            ["user", "required", "Muted user mention or ID"],
-        ],
-        description="Unmute a member from the server"
+            ["user", "required", "Muted member mention or ID"],
+        ]
     )
     @commands.has_permissions(manage_roles=True)
     @commands.guild_only()
@@ -233,18 +254,22 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="clear",
-        brief="clear (amount) (member)",
+        brief="Delete a channel's messages",
+        help=(
+                "Cleans the channel. "
+                "You can limit the number of deleted messages (deletion occurs from new to old). "
+                "You can also specify the user whose messages you want to delete"
+                "\nThe command is available only if you have the rights to manage messages."
+        ),
         usage=[
             ["amount", "optional", "Number of messages"],
-            ["member", "optional", "Whose messages"]
-        ],
-        description="Delete a channel`s messages"
+            ["member", "optional", "Messages author mention or ID"]
+        ]
     )
     @commands.has_permissions(manage_messages=True)
     @commands.guild_only()
     async def clear(self, ctx, limit: str = "all", member: discord.Member = None):
-        """Delete a channel`s messages
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param limit: any - Amount of messages to delete (all or empty will change to len(history), error if 0)
         :param member: discord.Member - Guild member (error if not in it)
@@ -276,12 +301,11 @@ class Moderator(commands.Cog):
 
     @commands.command(
         name="ping",
-        brief="ping",
-        description="Returns delay time"
+        brief="Bot health check",
+        help="Bot health check. Sends the estimated delay time for the bot's reaction"
     )
     async def ping(self, ctx):
-        """Bot health check. Returns delay time
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         """
         latency = round(self.bot.latency*1000)
