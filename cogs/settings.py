@@ -7,8 +7,8 @@ from urllib.parse import urlparse
 import os
 
 
-class Settings(commands.Cog):
-    """Allows to change Bot's functionality directly from discord. Only responds to request from owner"""
+class Settings(commands.Cog, name="settings"):
+    """Configuring bot functionality"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -26,12 +26,12 @@ class Settings(commands.Cog):
 
     @commands.command(
         name="toggle_greetings",
-        brief="toggle_greetings",
-        description="Turns on/off notification system for member join/remove in the system channel",
+        brief="Turns on/off notification system for member join/remove in the system channel",
+        help="If enabled, the bot will send messages about adding/removing a user to the system channel",
+        usage=[]
     )
     @commands.has_permissions(administrator=True)
     async def toggle_greetings(self, ctx):
-        """Turns greetings on guild on/off"""
         # Update database
         self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (ctx.guild.id,))
         is_greetings = not self.cursor.fetchone()[0]

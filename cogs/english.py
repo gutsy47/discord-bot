@@ -8,8 +8,8 @@ import asyncio
 from random import randint
 
 
-class English(commands.Cog):
-    """Helps to learn a set of new english words"""
+class English(commands.Cog, name="english"):
+    """Helps to learn a set of english words. Works only in DM"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         credentials = {
@@ -31,13 +31,17 @@ class English(commands.Cog):
 
     @commands.command(
         name="select",
-        brief="select",
-        description="Displays a list of dictionaries, waiting for your choice"
+        brief="Display a list of dictionaries, wait for your choice",
+        help=(
+                "Loads word lists from a table and sends their first lines. "
+                "Waiting for user selection."
+                "\nAlso you can use the rest of the commands by specifying the table number."
+        ),
+        usage=[]
     )
     @commands.dm_only()
     async def select(self, ctx):
-        """Loads word lists from the database, displays them and processes the user's reaction
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         """
         embed = discord.Embed(title="Word lists", description="Loading...", color=self.bot.ColorDefault)
@@ -84,16 +88,18 @@ class English(commands.Cog):
 
     @commands.command(
         name="learn",
-        brief="learn (word list number)",
+        brief="Launches training in test format",
+        help=(
+                "Asks for the translation of a word with 4 possible answers. "
+                "You just need to write the letter of the answer."
+        ),
         usage=[
             ["number", "optional", "Word list number (integer)"]
-        ],
-        description="Launches training in test format"
+        ]
     )
     @commands.dm_only()
     async def learn(self, ctx, index: int = None):
-        """Launches a multi-choice learning system
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param index: int - Number of the list of words to get it from the DB
         """
@@ -178,16 +184,19 @@ class English(commands.Cog):
 
     @commands.command(
         name="exam",
-        brief="exam (word list number)",
+        brief="Launches exam",
+        help=(
+                "Work in the form of a regular survey. "
+                "It is necessary to write a translation. "
+                "At the end of the survey, your result is displayed as a percentage and mistakes"
+        ),
         usage=[
             ["number", "optional", "Word list number (integer)"]
-        ],
-        description="Launches exam"
+        ]
     )
     @commands.dm_only()
     async def exam(self, ctx, index: int = None):
-        """Launches an exam system
-
+        """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param index: int - Number of the list of words to get it from the DB
         """
