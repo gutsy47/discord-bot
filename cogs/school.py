@@ -91,7 +91,7 @@ class School(commands.Cog, name="school"):
             return commands.BadArgument("Schedule not posted for the selected date")
 
         # Get schedules in HTML format for date
-        tables = soup.find_all('tbody')
+        tables = [table for table in soup.find_all('tbody') if table.get_text().strip() != '']
         pos = dates.index(str(date.day))
         tables = [tables[pos*2], tables[pos*2 + 1]]
 
@@ -154,8 +154,12 @@ class School(commands.Cog, name="school"):
                 homework = await self.get_homework(guild=channel.guild.id, date=date)
 
                 # Message create
-                date = await self.date_format(date=date)
-                embed = discord.Embed(title=date, description='', url=self.bot.ScheduleURL, color=self.bot.ColorDefault)
+                embed = discord.Embed(
+                    title=await self.date_format(date=date),
+                    description='',
+                    url=self.bot.ScheduleURL,
+                    color=self.bot.ColorDefault
+                )
                 for index, lesson in enumerate(timetable['11м']):  # Schedule
                     embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
                 for lesson, hw in homework.items():  # Homework
