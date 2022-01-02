@@ -48,7 +48,7 @@ class School(commands.Cog, name="school"):
         """
         # Get channels with homework from DB
         self.cursor.execute(
-            "SELECT channel_id, lesson_name FROM channel WHERE guild_id=%s AND lesson_name IS NOT NULL;", (guild, )
+            "SELECT channel_id, lesson_name FROM ds_channel WHERE guild_id=%s AND lesson_name IS NOT NULL;", (guild, )
         )
         selected = self.cursor.fetchall()
 
@@ -126,7 +126,7 @@ class School(commands.Cog, name="school"):
         Sends timetable and homework for all guilds to the schedule channel.
         """
         # Get distribution channels from DB
-        self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule=True;")
+        self.cursor.execute("SELECT channel_id FROM ds_channel WHERE is_schedule=True;")
         channel_ids = self.cursor.fetchall()
         channels = [self.bot.get_channel(channel_id[0]) for channel_id in channel_ids]  # discord.Channel objects
 
@@ -194,7 +194,7 @@ class School(commands.Cog, name="school"):
         reaction = payload.emoji
 
         # Get schedule channels from DB
-        self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule=True;")
+        self.cursor.execute("SELECT channel_id FROM ds_channel WHERE is_schedule=True;")
         selected = self.cursor.fetchall()
         channels = [channel_id[0] for channel_id in selected]
 
@@ -253,7 +253,7 @@ class School(commands.Cog, name="school"):
             if course not in courses:
                 raise commands.BadArgument("Incorrect course")
         else:
-            self.cursor.execute("SELECT course_name FROM guild WHERE guild_id=%s", (ctx.guild.id, ))
+            self.cursor.execute("SELECT course_name FROM ds_guild WHERE guild_id=%s", (ctx.guild.id, ))
             course = self.cursor.fetchone()
             if not course:
                 raise commands.BadArgument("**Course** not specified in this server. Use **set_course** command")
@@ -299,7 +299,7 @@ class School(commands.Cog, name="school"):
         """
         # Update DB
         try:
-            self.cursor.execute("UPDATE guild SET course_name=%s WHERE guild_id=%s;", (course, ctx.guild.id))
+            self.cursor.execute("UPDATE ds_guild SET course_name=%s WHERE guild_id=%s;", (course, ctx.guild.id))
         except psycopg2.errors.ForeignKeyViolation:
             raise commands.BadArgument("Name is incorrect")
 
@@ -325,19 +325,19 @@ class School(commands.Cog, name="school"):
         :param channel: discord.TextChannel - Channel mention or ID
         """
         # Get channel ID or None
-        self.cursor.execute("SELECT channel_id FROM channel WHERE is_schedule AND guild_id=%s;", (channel.guild.id, ))
+        self.cursor.execute("SELECT channel_id FROM ds_channel WHERE is_schedule AND guild_id=%s;", (channel.guild.id, ))
         current_id = self.cursor.fetchone()
 
         # Change state
         message = f"Now the schedule will be sent to {channel.mention}"
         if not current_id:  # First setup
-            self.cursor.execute("UPDATE channel SET is_schedule=True WHERE channel_id=%s;", (channel.id, ))
+            self.cursor.execute("UPDATE ds_channel SET is_schedule=True WHERE channel_id=%s;", (channel.id, ))
         elif current_id[0] != channel.id:  # Change channel
-            self.cursor.execute("UPDATE channel SET is_schedule=False WHERE channel_id=%s;", (current_id[0], ))
-            self.cursor.execute("UPDATE channel SET is_schedule=True WHERE channel_id=%s;", (channel.id, ))
+            self.cursor.execute("UPDATE ds_channel SET is_schedule=False WHERE channel_id=%s;", (current_id[0], ))
+            self.cursor.execute("UPDATE ds_channel SET is_schedule=True WHERE channel_id=%s;", (channel.id, ))
         else:  # Delete distribution
             message = "Now the schedule will not be sent"
-            self.cursor.execute("UPDATE channel SET is_schedule=False WHERE channel_id=%s;", (channel.id, ))
+            self.cursor.execute("UPDATE ds_channel SET is_schedule=False WHERE channel_id=%s;", (channel.id, ))
 
         # Send message
         embed = discord.Embed(description=message, color=self.bot.ColorDefault)
@@ -368,7 +368,7 @@ class School(commands.Cog, name="school"):
         lesson = lesson.lower()
         message = f"Now I will look for **{lesson}** homework In the **{channel.mention}**"
         try:
-            self.cursor.execute("UPDATE channel SET lesson_name=%s WHERE channel_id=%s;", (lesson, channel.id))
+            self.cursor.execute("UPDATE ds_channel SET lesson_name=%s WHERE channel_id=%s;", (lesson, channel.id))
         except psycopg2.errors.ForeignKeyViolation:
             raise commands.BadArgument("Name is incorrect\nFind out the list of available lessons using `get_lessons`")
 
@@ -392,7 +392,7 @@ class School(commands.Cog, name="school"):
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param channel: discord.TextChannel - Channel mention or ID
         """
-        self.cursor.execute("UPDATE channel SET lesson_name=NULL WHERE channel_id=%s;", (channel.id, ))
+        self.cursor.execute("UPDATE ds_channel SET lesson_name=NULL WHERE channel_id=%s;", (channel.id, ))
         message = f"Now the **{channel.mention}** is not related to homework"
         embed = discord.Embed(description=message, color=self.bot.ColorDefault)
         await ctx.send(embed=embed)

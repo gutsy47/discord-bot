@@ -33,9 +33,9 @@ class Settings(commands.Cog, name="settings"):
     @commands.has_permissions(administrator=True)
     async def toggle_greetings(self, ctx):
         # Update database
-        self.cursor.execute("SELECT is_greetings FROM guild WHERE guild_id=%s;", (ctx.guild.id,))
+        self.cursor.execute("SELECT is_greetings FROM ds_guild WHERE guild_id=%s;", (ctx.guild.id,))
         is_greetings = not self.cursor.fetchone()[0]
-        self.cursor.execute("UPDATE guild SET is_greetings=%s WHERE guild_id=%s;", (is_greetings, ctx.guild.id))
+        self.cursor.execute("UPDATE ds_guild SET is_greetings=%s WHERE guild_id=%s;", (is_greetings, ctx.guild.id))
 
         # Send message
         answer = '' if is_greetings else '**not**'
