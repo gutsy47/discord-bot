@@ -149,7 +149,7 @@ class School(commands.Cog, name="school"):
             # Avoid existing message
             async for message in channel.history(limit=None):
                 try:
-                    if date.strftime('%d.%m.%y') in message.embeds[0].title:
+                    if "Дома" not in message.embeds[0].title and date.strftime('%d.%m.%y') in message.embeds[0].title:
                         break
                 except (TypeError, IndexError):  # Not schedule message
                     continue
@@ -181,9 +181,61 @@ class School(commands.Cog, name="school"):
                 message = await channel.send(embed=embed)
                 await message.add_reaction(emoji='🔄')
 
+    @tasks.loop(hours=12)
+    async def weekly_homework_distribution(self):
+        """Weekly homework distribution
+        Sends homework for week every friday
+        """
+        # Get start and end date
+        date1 = datetime.strptime('13.12.21', '%d.%m.%y')
+        date2 = date1 + timedelta(days=4)
+
+        # Is friday check
+        if date1.weekday() != 4:
+            return
+
+        # Get distribution channels from DB
+        self.cursor.execute("SELECT channel_id FROM ds_channel WHERE is_schedule=True;")
+        channel_ids = self.cursor.fetchall()
+        channels = [self.bot.get_channel(channel_id[0]) for channel_id in channel_ids]  # discord.Channel objects
+
+        # Main loop
+        title = f"Домашнее задание с {date1.strftime('%d.%m.%y')} по {date2.strftime('%d.%m.%y')}"
+        embed = discord.Embed(title=title, color=self.bot.ColorDefault)
+        for channel in channels:
+            # Avoid existing message
+            async for message in channel.history(limit=None):
+                try:
+                    if title == message.embeds[0].title:
+                        break
+                except (TypeError, IndexError):  # Not schedule message
+                    continue
+            else:
+                # Get homework
+                homework = await self.get_homework(guild_id=channel.guild.id, date1=date1, date2=date2)
+
+                # Create message
+                for date, homework in homework.items():
+                    values = ''
+                    for lesson, hw in homework.items():
+                        value = hw['content']
+                        if hw['files']:
+                            value += "\nПрикреплённые файлы: "
+                            for index, link in enumerate(hw['files']):
+                                value += f"[№{index + 1}]({link})"
+                                value += ', ' if index + 1 < len(hw['files']) else ''
+                        if value:
+                            values += f'**{lesson}**{value}\n'
+                    embed.add_field(name=date, value=values or r'¯\_(ツ)_/¯ Ничего не задано')
+
+                # Send message and add refresh button
+                message = await channel.send(embed=embed)
+                await message.add_reaction(emoji='🔄')
+
     @commands.Cog.listener()
     async def on_ready(self):
         self.schedule_distribution.start()
+        self.weekly_homework_distribution.start()
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
@@ -205,30 +257,61 @@ class School(commands.Cog, name="school"):
         channels = [channel_id[0] for channel_id in selected]
 
         # Work only with schedule channels, avoiding bot's reactions
-        if channel.id not in channels:
+        if channel.id not in channels:  # Non-schedule channel
             return
-        if member == self.bot.user:
+        if member == self.bot.user:  # Bot's reaction
             return
-        if reaction.name != '🔄':
+        if reaction.name != '🔄':  # Another reactions
             return await message.remove_reaction(emoji=reaction, member=member)
 
-        # Get message embed without homework (fields)
+        # Message embed without homework (without fields)
         embed = message.embeds[0]
-        date = datetime.strptime(embed.title.split()[1], '%d.%m.%y')
         embed.clear_fields()
 
-        # Update homework
-        homework = await self.get_homework(guild_id=channel.guild.id, date1=date)
-        for lesson, hw in homework[date.strftime('%d.%m.%y')].items():
-            value = hw['content']
-            if hw['files']:
-                value += "\nПрикреплённые файлы: "
-                for index, link in enumerate(hw['files']):
-                    value += f"[№{index + 1}]({link})"
-                    value += ', ' if index + 1 < len(hw['files']) else ''
-            embed.add_field(name=lesson, value=value, inline=False)
+        # Main
+        if "Домашнее задание" in embed.title:  # Weekly homework distribution
+            # Clear schedule URL
+            embed.url = None
 
-        # Edit message and update DB
+            # Get start and end date
+            date1 = datetime.strptime(embed.title.split()[3], '%d.%m.%y')
+            date2 = datetime.strptime(embed.title.split()[5], '%d.%m.%y')
+
+            # Get homework
+            homework = await self.get_homework(guild_id=channel.guild.id, date1=date1, date2=date2)
+
+            # Create message
+            for date, homework in homework.items():
+                values = ''
+                for lesson, hw in homework.items():
+                    value = hw['content']
+                    if hw['files']:
+                        value += "\nПрикреплённые файлы: "
+                        for index, link in enumerate(hw['files']):
+                            value += f"[№{index + 1}]({link})"
+                            value += ', ' if index + 1 < len(hw['files']) else ''
+                    if value:
+                        values += f'**{lesson}**{value}\n'
+                embed.add_field(name=date, value=values or r'¯\_(ツ)_/¯ Ничего не задано')
+
+        else:  # Schedule distribution
+            # Date from title
+            date = datetime.strptime(embed.title.split()[1], '%d.%m.%y')
+
+            # Get homework
+            homework = await self.get_homework(guild_id=channel.guild.id, date1=date)
+
+            # Create message
+            for lesson, hw in homework[date.strftime('%d.%m.%y')].items():
+                value = hw['content']
+                if hw['files']:
+                    value += "\nПрикреплённые файлы: "
+                    for index, link in enumerate(hw['files']):
+                        value += f"[№{index + 1}]({link})"
+                        value += ', ' if index + 1 < len(hw['files']) else ''
+                embed.add_field(name=lesson, value=value, inline=False)
+
+        # Edit message and remove reaction
         await message.edit(embed=embed)
         await message.remove_reaction(emoji=reaction, member=member)
 
