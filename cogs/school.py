@@ -37,34 +37,43 @@ class School(commands.Cog, name="school"):
         }
         return week[date.strftime('%a')].capitalize() + date.strftime(' %d.%m.%y')
 
-    async def get_homework(self, guild: int, date: datetime):
-        # TODO: From date1 to date2
-        # TODO: CHW with obj
-        """Returns homework for a given date
+    async def get_homework(self, guild_id: int, date1: datetime, date2: datetime = None):
+        """Returns homework from guild in date range
 
-        :param guild: int - Guild's ID
-        :param date: datetime - DateTime object
-        :return: dict - {lesson: {content: str, files: list, source: str}, }
+        :param guild_id: int - Guild's ID
+        :param date1: datetime - Start date (one day can be specified)
+        :param date2: datetime - End date (None as default)
+        :return: dict - {lesson: {date: int, content: str, files: list, source: str}, }
         """
+        # Date handler
+        date2 = date2 or date1
+        date_range = [(date1 + timedelta(days=x)).strftime('%d.%m.%y') for x in range(0, (date2 - date1).days + 1)]
+
         # Get channels with homework from DB
         self.cursor.execute(
-            "SELECT channel_id, lesson_name FROM ds_channel WHERE guild_id=%s AND lesson_name IS NOT NULL;", (guild, )
+            "SELECT channel_id, lesson_name FROM ds_channel WHERE guild_id=%s AND lesson_name IS NOT NULL;", (guild_id,)
         )
         selected = self.cursor.fetchall()
 
         # Main loop
-        homework = {}
+        homework = {date: {} for date in date_range}
         for channel_id, lesson in selected:
             channel = self.bot.get_channel(channel_id)
             async for message in channel.history():
-                if "дз" in message.content and date.strftime('%d.%m.%y') in message.content:
-                    content = ''
-                    if '\n' in message.content:
-                        content = message.content[message.content.find('\n'):]  # Cut off the title
-                    files = [file.url for file in message.attachments]
-                    src = message.jump_url
-                    homework[lesson.capitalize()] = {'content': content, 'files': files, 'source': src}
-                    break
+                if "дз" in message.content:
+                    try:
+                        current = message.content[3:11]
+                        datetime.strptime(current, '%d.%m.%y')
+                    except ValueError:
+                        continue
+                    if current in date_range:
+                        homework[current][lesson.capitalize()] = {
+                            'content': message.content[message.content.find('\n'):] if '\n' in message.content else '',
+                            'files': [file.url for file in message.attachments],
+                            'source': message.jump_url
+                        }
+                    elif current < date_range[0]:
+                        break
 
         return homework
 
@@ -115,13 +124,8 @@ class School(commands.Cog, name="school"):
 
         return schedule
 
-    @commands.Cog.listener()
-    async def on_ready(self):
-        self.schedule_distribution.start()
-
     @tasks.loop(minutes=15)
     async def schedule_distribution(self):
-        # TODO: Remove redundant check if in schedule
         """Schedule distribution
         Sends timetable and homework for all guilds to the schedule channel.
         """
@@ -151,7 +155,7 @@ class School(commands.Cog, name="school"):
                     continue
             else:
                 # Get homework
-                homework = await self.get_homework(guild=channel.guild.id, date=date)
+                homework = await self.get_homework(guild_id=channel.guild.id, date1=date)
 
                 # Message create
                 embed = discord.Embed(
@@ -162,16 +166,15 @@ class School(commands.Cog, name="school"):
                 )
                 for index, lesson in enumerate(timetable['11м']):  # Schedule
                     embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
-                for lesson, hw in homework.items():  # Homework
-                    if lesson[:3].lower() in embed.description.lower():
-                        value = hw['content']
-                        if hw['files']:
-                            value += "\nПрикреплённые файлы: "
-                            for index, link in enumerate(hw['files']):
-                                value += f"[№{index + 1}]({link})"
-                                value += ', ' if index + 1 < len(hw['files']) else ''
-                        if value:
-                            embed.add_field(name=lesson, value=value, inline=False)
+                for lesson, hw in homework[date.strftime('%d.%m.%y')].items():  # Homework
+                    value = hw['content']
+                    if hw['files']:
+                        value += "\nПрикреплённые файлы: "
+                        for index, link in enumerate(hw['files']):
+                            value += f"[№{index + 1}]({link})"
+                            value += ', ' if index + 1 < len(hw['files']) else ''
+                    if value:
+                        embed.add_field(name=lesson, value=value, inline=False)
                 embed.url = self.bot.ScheduleURL
 
                 # Send message and add refresh button
@@ -179,8 +182,11 @@ class School(commands.Cog, name="school"):
                 await message.add_reaction(emoji='🔄')
 
     @commands.Cog.listener()
+    async def on_ready(self):
+        self.schedule_distribution.start()
+
+    @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        # TODO: Remove redundant check if in schedule
         """Updates homework in reaction message
 
         :param payload: discord.RawReactionActionEvent - The raw event payload data
@@ -212,16 +218,15 @@ class School(commands.Cog, name="school"):
         embed.clear_fields()
 
         # Update homework
-        homework = await self.get_homework(guild=channel.guild.id, date=date)
-        for lesson, hw in homework.items():
-            if lesson[:3].lower() in embed.description.lower():
-                value = hw['content']
-                if hw['files']:
-                    value += "\nПрикреплённые файлы: "
-                    for index, link in enumerate(hw['files']):
-                        value += f"[№{index + 1}]({link})"
-                        value += ', ' if index + 1 < len(hw['files']) else ''
-                embed.add_field(name=lesson, value=value, inline=False)
+        homework = await self.get_homework(guild_id=channel.guild.id, date1=date)
+        for lesson, hw in homework[date.strftime('%d.%m.%y')].items():
+            value = hw['content']
+            if hw['files']:
+                value += "\nПрикреплённые файлы: "
+                for index, link in enumerate(hw['files']):
+                    value += f"[№{index + 1}]({link})"
+                    value += ', ' if index + 1 < len(hw['files']) else ''
+            embed.add_field(name=lesson, value=value, inline=False)
 
         # Edit message and update DB
         await message.edit(embed=embed)
