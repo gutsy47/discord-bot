@@ -44,7 +44,7 @@ class School(commands.Cog, name="school"):
         :param guild_id: int - Guild's ID
         :param date1: datetime - Start date (one day can be specified)
         :param date2: datetime - End date (None as default)
-        :return: dict - {lesson: {date: int, content: str, files: list, source: str}, }
+        :return: dict - {date: {lesson: {content: str, files: [str], source: str}}
         """
         # Date handler
         date2 = date2 or date1
@@ -82,14 +82,14 @@ class School(commands.Cog, name="school"):
         """Returns the timetable from the school website
 
         :param date: datetime - The date for which you need to get the schedule
-        :return: dict - {course: [lesson1, lesson2], } or commands.BadArgument
+        :return: dict - {course: [lesson1, lesson2]} or RuntimeError
         """
         # Argument error handler
         if date.weekday() > 4:
-            return commands.BadArgument("No lessons on weekends")
+            return RuntimeError("No lessons on weekends")
         today = datetime.today()
         if (date.month not in [today.month, today.month + 1]) or (date.year != today.year):
-            return commands.BadArgument("Schedule not posted for the selected date")
+            return RuntimeError("Schedule not posted for the selected date")
 
         # Get soup
         response = requests.get(self.bot.ScheduleURL)
@@ -98,7 +98,7 @@ class School(commands.Cog, name="school"):
         # Get dates
         dates = [h2.get_text().split()[-2] for h2 in soup.find_all('h2') if "Расписание" in h2.get_text()]
         if str(date.day) not in dates:
-            return commands.BadArgument("Schedule not posted for the selected date")
+            return RuntimeError("Schedule not posted for the selected date")
 
         # Get schedules in HTML format for date
         tables = [table for table in soup.find_all('tbody') if table.get_text().strip() != '']
@@ -147,9 +147,9 @@ class School(commands.Cog, name="school"):
 
         # Main loop
         for channel in channels:
-            # Avoid existing message
             async for message in channel.history(limit=None):
                 try:
+                    # Avoiding existing message
                     if "Дома" not in message.embeds[0].title and date.strftime('%d.%m.%y') in message.embeds[0].title:
                         break
                 except (TypeError, IndexError):  # Not schedule message
@@ -165,9 +165,13 @@ class School(commands.Cog, name="school"):
                     url=self.bot.ScheduleURL,
                     color=self.bot.ColorDefault
                 )
-                for index, lesson in enumerate(timetable['11м']):  # Schedule
+
+                # Add schedule to description
+                for index, lesson in enumerate(timetable['11м']):
                     embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
-                for lesson, hw in homework[date.strftime('%d.%m.%y')].items():  # Homework
+
+                # Add homework to fields
+                for lesson, hw in homework[date.strftime('%d.%m.%y')].items():
                     value = hw['content']
                     if hw['files']:
                         value += "\nПрикреплённые файлы: "
@@ -200,13 +204,14 @@ class School(commands.Cog, name="school"):
         channel_ids = self.cursor.fetchall()
         channels = [self.bot.get_channel(channel_id[0]) for channel_id in channel_ids]  # discord.Channel objects
 
-        # Main loop
+        # Message title
         title = f"Домашнее задание с {date1.strftime('%d.%m.%y')} по {date2.strftime('%d.%m.%y')}"
-        embed = discord.Embed(title=title, color=self.bot.ColorDefault)
+
+        # Main loop
         for channel in channels:
-            # Avoid existing message
             async for message in channel.history(limit=None):
                 try:
+                    # Avoid existing message
                     if title == message.embeds[0].title:
                         break
                 except (TypeError, IndexError):  # Not schedule message
@@ -216,6 +221,9 @@ class School(commands.Cog, name="school"):
                 homework = await self.get_homework(guild_id=channel.guild.id, date1=date1, date2=date2)
 
                 # Create message
+                embed = discord.Embed(title=title, color=self.bot.ColorDefault)
+
+                # Add homework to fields
                 for date, homework in homework.items():
                     values = ''
                     for lesson, hw in homework.items():
@@ -246,7 +254,7 @@ class School(commands.Cog, name="school"):
         """
         # Get payload data
         channel = self.bot.get_channel(payload.channel_id)
-        if not channel:  # Avoiding DM messages
+        if not channel:  # Avoid DM messages
             return
         message = await channel.fetch_message(payload.message_id)
         member = payload.member
@@ -276,8 +284,7 @@ class School(commands.Cog, name="school"):
         task = self.bot.loop.create_task(loading_indicator(msg=message))
 
         # Main
-        if "Домашнее задание" in message.embeds[0].title:
-            # Weekly homework
+        if "Домашнее задание" in message.embeds[0].title:  # Weekly homework
             embed = discord.Embed(title=message.embeds[0].title, color=self.bot.ColorDefault)
 
             # Get start and end date
@@ -300,8 +307,7 @@ class School(commands.Cog, name="school"):
                     if value:
                         values += f'**{lesson}**{value}\n'
                 embed.add_field(name=date, value=values or r'¯\_(ツ)_/¯ Ничего не задано')
-        else:
-            # Schedule
+        else:  # Schedule
             embed = discord.Embed(title=message.embeds[0].title, color=self.bot.ColorDefault)
 
             # Date from title
@@ -321,7 +327,7 @@ class School(commands.Cog, name="school"):
                 embed.add_field(name=lesson, value=value, inline=False)
 
         # Edit message and remove reaction
-        task.cancel()
+        task.cancel()  # Stop loading indicator
         await message.edit(embed=embed)
         await message.remove_reaction(emoji=reaction, member=member)
 
@@ -365,10 +371,10 @@ class School(commands.Cog, name="school"):
         except ValueError:
             raise commands.BadArgument("**Date** should have **DD.MM.YY** format")
 
-        # Get data
+        # Get schedule
         timetable = await self.get_schedule(date=date)
         if not isinstance(timetable, dict):
-            raise timetable
+            raise commands.BadArgument(timetable.__str__())
 
         # Create message
         title = await self.date_format(date=date) + ' ' + course

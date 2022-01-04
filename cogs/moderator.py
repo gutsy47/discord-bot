@@ -1,8 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-TODO: Temp commands
-TODO: Server stats
-"""
 import discord
 from discord.ext import commands
 from discord.utils import get
@@ -206,7 +202,6 @@ class Moderator(commands.Cog, name="admin"):
     @commands.has_permissions(manage_roles=True)
     @commands.guild_only()
     async def mute(self, ctx, member: discord.Member, *, reason: str = "Not specified"):
-        # TODO: Автоматическое создание и настройка роли muted (с учетом появления новых серверов)
         """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         :param member: discord.Member - Guild member (error if not in it)
