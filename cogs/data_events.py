@@ -67,7 +67,7 @@ class DataEvents(commands.Cog):
         guild_members = tuple(user_id[0] for user_id in self.cursor.fetchall())
 
         # Guild remove
-        self.cursor.execute("DELETE FROM guild WHERE guild_id=%s;", (guild.id, ))  # Guild remove
+        self.cursor.execute("DELETE FROM ds_guild WHERE guild_id=%s;", (guild.id, ))  # Guild remove
 
         # Same users in another guilds
         self.cursor.execute("SELECT user_id FROM ds_member WHERE user_id IN %s;", (guild_members, ))
