@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import asyncio
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
@@ -264,14 +265,20 @@ class School(commands.Cog, name="school"):
         if reaction.name != '🔄':  # Another reactions
             return await message.remove_reaction(emoji=reaction, member=member)
 
-        # Message embed without homework (without fields)
-        embed = message.embeds[0]
-        embed.clear_fields()
+        # Loading indicator
+        async def loading_indicator(msg: discord.Message):
+            """Refresh the loading indicator (footer) every 0.5 sec"""
+            indicator = "Loading"
+            while True:
+                indicator = indicator + '.' if indicator != "Loading..." else "Loading"
+                await msg.edit(embed=msg.embeds[0].set_footer(text=indicator))
+                await asyncio.sleep(0.5)
+        task = self.bot.loop.create_task(loading_indicator(msg=message))
 
         # Main
-        if "Домашнее задание" in embed.title:  # Weekly homework distribution
-            # Clear schedule URL
-            embed.url = None
+        if "Домашнее задание" in message.embeds[0].title:
+            # Weekly homework
+            embed = discord.Embed(title=message.embeds[0].title, color=self.bot.ColorDefault)
 
             # Get start and end date
             date1 = datetime.strptime(embed.title.split()[3], '%d.%m.%y')
@@ -293,8 +300,10 @@ class School(commands.Cog, name="school"):
                     if value:
                         values += f'**{lesson}**{value}\n'
                 embed.add_field(name=date, value=values or r'¯\_(ツ)_/¯ Ничего не задано')
+        else:
+            # Schedule
+            embed = discord.Embed(title=message.embeds[0].title, color=self.bot.ColorDefault)
 
-        else:  # Schedule distribution
             # Date from title
             date = datetime.strptime(embed.title.split()[1], '%d.%m.%y')
 
@@ -312,6 +321,7 @@ class School(commands.Cog, name="school"):
                 embed.add_field(name=lesson, value=value, inline=False)
 
         # Edit message and remove reaction
+        task.cancel()
         await message.edit(embed=embed)
         await message.remove_reaction(emoji=reaction, member=member)
 
