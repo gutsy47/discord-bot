@@ -191,13 +191,13 @@ class School(commands.Cog, name="school"):
         """Weekly homework distribution
         Sends homework for week every friday
         """
-        # Get start and end date
-        date1 = datetime.strptime('13.12.21', '%d.%m.%y')
-        date2 = date1 + timedelta(days=4)
-
         # Is friday check
-        if date1.weekday() != 4:
+        if datetime.today().weekday() != 4:
             return
+
+        # Get start and end date
+        date1 = datetime.today() + timedelta(days=3)
+        date2 = date1 + timedelta(days=4)
 
         # Get distribution channels from DB
         self.cursor.execute("SELECT channel_id FROM ds_channel WHERE is_schedule=True;")
