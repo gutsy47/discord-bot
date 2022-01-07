@@ -73,7 +73,7 @@ class School(commands.Cog, name="school"):
                             'files': [file.url for file in message.attachments],
                             'source': message.jump_url
                         }
-                    elif current < date_range[0]:
+                    elif datetime.strptime(current, '%d.%m.%y') < datetime.strptime(date_range[0], '%d.%m.%y'):
                         break
 
         return homework
@@ -308,7 +308,12 @@ class School(commands.Cog, name="school"):
                         values += f'**{lesson}**{value}\n'
                 embed.add_field(name=date, value=values or r'¯\_(ツ)_/¯ Ничего не задано')
         else:  # Schedule
-            embed = discord.Embed(title=message.embeds[0].title, color=self.bot.ColorDefault)
+            embed = discord.Embed(
+                title=message.embeds[0].title,
+                description=message.embeds[0].description,
+                url=self.bot.ScheduleURL,
+                color=self.bot.ColorDefault
+            )
 
             # Date from title
             date = datetime.strptime(embed.title.split()[1], '%d.%m.%y')
