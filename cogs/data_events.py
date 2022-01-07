@@ -44,8 +44,8 @@ class DataEvents(commands.Cog):
         for member in guild.members:
             user = self.bot.get_user(member.id)
             self.cursor.execute(
-                "INSERT INTO ds_user VALUES (%s, %s, %s) ON CONFLICT DO NOTHING;",
-                (user.id, user.name, user.discriminator)
+                "INSERT INTO ds_user VALUES (%s, %s) ON CONFLICT DO NOTHING;",
+                (user.id, user.name)
             )
             is_owner = member.id == member.guild.owner_id
             self.cursor.execute(
@@ -110,10 +110,10 @@ class DataEvents(commands.Cog):
         self.cursor.execute("SELECT 1 FROM ds_user WHERE user_id=%s;", (member.id, ))
         user_exists = self.cursor.fetchone()
         if not user_exists:  # Add user to database if doesn't exist
-            user: discord.User = self.bot.get_user(member.id)
+            user = self.bot.get_user(member.id)
             self.cursor.execute(
-                "INSERT INTO ds_user VALUES (%s, %s, %s);",
-                (user.id, user.name, user.discriminator)
+                "INSERT INTO ds_user VALUES (%s, %s);",
+                (user.id, user.name)
             )
 
         self.cursor.execute(
@@ -154,8 +154,8 @@ class DataEvents(commands.Cog):
     async def on_user_update(self, before: discord.User, after: discord.User):
         """Called when user updates his: avatar, username, discriminator"""
         self.cursor.execute(
-            "UPDATE ds_user SET user_name=%s, user_discriminator=%s WHERE user_id=%s;",
-            (after.name, after.discriminator, after.id)
+            "UPDATE ds_user SET user_name=%s WHERE user_id=%s;",
+            (after.name, after.id)
         )
 
 
