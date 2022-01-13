@@ -61,7 +61,7 @@ class School(commands.Cog, name="school"):
         for channel_id, lesson in selected:
             channel = self.bot.get_channel(channel_id)
             async for message in channel.history():
-                if "дз" in message.content:
+                if "дз" in message.content.lower():
                     try:
                         current = message.content[3:11]
                         datetime.strptime(current, '%d.%m.%y')
