@@ -40,7 +40,8 @@ class Moderator(commands.Cog, name="admin"):
             "muted": member.guild_permissions.manage_roles
         }
         if has_permissions[penalty]:
-            name, discriminator = message.embeds[0].author.name.split()[-3].split('#')
+            title = message.embeds[0].author.name
+            name, discriminator = title[:title.index(" was")].split('#')
             embed = discord.Embed(color=self.bot.ColorDefault)
             if penalty == "banned":
                 banned_users = [entry.user for entry in await channel.guild.bans()]
