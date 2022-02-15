@@ -1,6 +1,6 @@
 discord == 1.7.3
-requests == 2.26.0
+requests == 2.27.1
 beautifulsoup4 == 4.10.0
-lxml == 4.6.3
-gspread == 4.0.1
-psycopg2 == 2.9.2
+lxml == 4.7.1
+gspread == 5.1.1
+psycopg2 == 2.9.3
