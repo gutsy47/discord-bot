@@ -131,9 +131,12 @@ class School(commands.Cog, name="school"):
         Sends timetable and homework for all guilds to the schedule channel.
         """
         # Get distribution channels from DB
-        self.cursor.execute("SELECT channel_id FROM ds_channel WHERE is_schedule=True;")
-        channel_ids = self.cursor.fetchall()
-        channels = [self.bot.get_channel(channel_id[0]) for channel_id in channel_ids]  # discord.Channel objects
+        self.cursor.execute(
+            "SELECT channel_id, course_name FROM ds_channel "
+            "INNER JOIN ds_guild ON ds_guild.guild_id=ds_channel.guild_id "
+            "WHERE is_schedule=True;"
+        )
+        result = [{'channel': self.bot.get_channel(row[0]), 'course': row[1]} for row in self.cursor.fetchall()]
 
         # Get tomorrow date (or monday if tomorrow is weekend)
         date = datetime.today() + timedelta(days=1)
@@ -146,8 +149,8 @@ class School(commands.Cog, name="school"):
             return
 
         # Main loop
-        for channel in channels:
-            async for message in channel.history(limit=None):
+        for row in result:
+            async for message in row['channel'].history(limit=None):
                 try:
                     # Avoiding existing message
                     if "Дома" not in message.embeds[0].title and date.strftime('%d.%m.%y') in message.embeds[0].title:
@@ -156,7 +159,7 @@ class School(commands.Cog, name="school"):
                     continue
             else:
                 # Get homework
-                homework = await self.get_homework(guild_id=channel.guild.id, date1=date)
+                homework = await self.get_homework(guild_id=row['channel'].guild.id, date1=date)
 
                 # Message create
                 embed = discord.Embed(
@@ -167,7 +170,7 @@ class School(commands.Cog, name="school"):
                 )
 
                 # Add schedule to description
-                for index, lesson in enumerate(timetable['11м']):
+                for index, lesson in enumerate(timetable[row['course']]):
                     embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
 
                 # Add homework to fields
@@ -183,7 +186,7 @@ class School(commands.Cog, name="school"):
                 embed.url = self.bot.ScheduleURL
 
                 # Send message and add refresh button
-                message = await channel.send(embed=embed)
+                message = await row['channel'].send(embed=embed)
                 await message.add_reaction(emoji='🔄')
 
     @tasks.loop(hours=12)
