@@ -150,28 +150,30 @@ class School(commands.Cog, name="school"):
 
         # Main loop
         for row in result:
+            # Message create
+            embed = discord.Embed(
+                title=await self.date_format(date=date),
+                description='',
+                url=self.bot.ScheduleURL,
+                color=self.bot.ColorDefault
+            )
+
+            # Add schedule to description
+            for index, lesson in enumerate(timetable[row['course']]):
+                embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
+
             async for message in row['channel'].history(limit=None):
                 try:
                     # Avoiding existing message
                     if "Дома" not in message.embeds[0].title and date.strftime('%d.%m.%y') in message.embeds[0].title:
-                        break
+                        if '\n' + message.embeds[0].description == embed.description:
+                            break
+                        await message.delete()
                 except (TypeError, IndexError):  # Not schedule message
                     continue
             else:
                 # Get homework
                 homework = await self.get_homework(guild_id=row['channel'].guild.id, date1=date)
-
-                # Message create
-                embed = discord.Embed(
-                    title=await self.date_format(date=date),
-                    description='',
-                    url=self.bot.ScheduleURL,
-                    color=self.bot.ColorDefault
-                )
-
-                # Add schedule to description
-                for index, lesson in enumerate(timetable[row['course']]):
-                    embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
 
                 # Add homework to fields
                 for lesson, hw in homework[date.strftime('%d.%m.%y')].items():
