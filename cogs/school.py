@@ -160,7 +160,7 @@ class School(commands.Cog, name="school"):
 
             # Add schedule to description
             for index, lesson in enumerate(timetable[row['course']]):
-                embed.description += f"\n`{index + 1}` {lesson}" if lesson.strip() else ''
+                embed.description += f"\n`{index + 1}` {lesson.strip()}" if lesson.strip() else ''
 
             async for message in row['channel'].history(limit=None):
                 try:
