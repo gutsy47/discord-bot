@@ -121,7 +121,7 @@ class School(commands.Cog, name="school"):
                     new_table.append(new_row)
             new_table = [[new_table[j][i] for j in range(len(new_table))] for i in range(len(new_table[0]))]  # rot90
             for row in new_table[1:]:
-                schedule[row[0]] = [lesson.capitalize() for lesson in row[2:]]
+                schedule[row[0]] = [lesson.capitalize() for lesson in row[1:]]
 
         return schedule
 
