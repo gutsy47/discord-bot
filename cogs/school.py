@@ -144,8 +144,8 @@ class School(commands.Cog, name="school"):
             date += timedelta(days=7 - date.weekday())
 
         # Get schedule data
-        timetable = await self.get_schedule(date=date)
-        if not isinstance(timetable, dict):
+        schedule = await self.get_schedule(date=date)
+        if not isinstance(schedule, dict):
             return
 
         # Main loop
@@ -158,9 +158,20 @@ class School(commands.Cog, name="school"):
                 color=self.bot.ColorDefault
             )
 
+            # Get timetable if exists
+            self.cursor.execute(
+                "SELECT lesson_number, time FROM timetable WHERE guild_id=%s;",
+                (row['channel'].guild.id, )
+            )
+            timetable = {row[0]: row[1] for row in self.cursor.fetchall()}
+
             # Add schedule to description
-            for index, lesson in enumerate(timetable[row['course']]):
-                embed.description += f"\n`{index + 1}` {lesson.strip()}" if lesson.strip() else ''
+            for index, lesson in enumerate(schedule[row['course']]):
+                if lesson.strip():
+                    try:
+                        embed.description += f"\n`{timetable[index + 1]} {index + 1}` {lesson.strip()}"
+                    except KeyError:
+                        embed.description += f"\n`{index + 1}` {lesson.strip()}"
 
             async for message in row['channel'].history(limit=None):
                 try:
@@ -382,15 +393,22 @@ class School(commands.Cog, name="school"):
             raise commands.BadArgument("**Date** should have **DD.MM.YY** format")
 
         # Get schedule
-        timetable = await self.get_schedule(date=date)
-        if not isinstance(timetable, dict):
-            raise commands.BadArgument(timetable.__str__())
+        schedule = await self.get_schedule(date=date)
+        if not isinstance(schedule, dict):
+            raise commands.BadArgument(schedule.__str__())
+
+        # Get timetable if exists
+        self.cursor.execute("SELECT lesson_number, time FROM timetable WHERE guild_id=%s;", (ctx.guild.id, ))
+        timetable = {row[0]: row[1] for row in self.cursor.fetchall()}
 
         # Create message
         title = await self.date_format(date=date) + ' ' + course
         embed = discord.Embed(title=title, description='', color=self.bot.ColorDefault)
-        for index, lesson in enumerate(timetable[course]):
-            embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
+        for index, lesson in enumerate(schedule[course]):
+            try:
+                embed.description += f"\n`{timetable[index+1]} {index + 1}` {lesson}" if lesson else ''
+            except KeyError:
+                embed.description += f"\n`{index + 1}` {lesson}" if lesson else ''
 
         # Send message
         await ctx.send(embed=embed)
@@ -524,6 +542,48 @@ class School(commands.Cog, name="school"):
         self.cursor.execute("SELECT lesson_name FROM lesson;")
         lessons = [lesson[0].capitalize() for lesson in self.cursor.fetchall()]
         embed = discord.Embed(title="Available lessons", description='\n'.join(lessons), color=self.bot.ColorDefault)
+        await ctx.send(embed=embed)
+
+    @commands.command(
+        name="set_timetable",
+        brief="Sets the start time of lessons",
+        help=(
+                "The command takes a list of start times of lesson as argument. "
+                "Specify the time of each lesson on a new line, or leave the line empty to remove the value. "
+                "Each line has a 16 character limit."
+                "\nExample:"
+                "```\n-set_timetable\n08:30-09:10\n09:30-10:10\n10:30-11:10\n```"
+        ),
+        usage=[
+            ["timetable", "required", "Start time of lessons"]
+        ]
+    )
+    async def set_timetable(self, ctx, *timetable):
+        # Delete old data
+        self.cursor.execute("DELETE FROM timetable WHERE guild_id=%s;", (ctx.guild.id, ))
+
+        # If argument is not empty
+        if timetable:
+
+            embed = discord.Embed(
+                title="Timetable recorded",
+                description="It'll look like this:",
+                color=self.bot.ColorDefault
+            )
+            for index, time in enumerate(timetable):
+                # Insert new data
+                self.cursor.execute(
+                    "INSERT INTO timetable VALUES (%s, %s, %s);",
+                    (ctx.guild.id, index+1, time)
+                )
+
+                # Add content in message
+                embed.description += f"\n`{time} {index+1}` Some lesson"
+        else:
+            # Create message about data delete
+            embed = discord.Embed(description="Old timetable has been deleted", color=self.bot.ColorDefault)
+
+        # Send message
         await ctx.send(embed=embed)
 
 
