@@ -6,12 +6,29 @@ import requests
 import bs4
 from bs4 import BeautifulSoup
 from re import fullmatch
+import gspread
+from gspread.utils import rowcol_to_a1
 
 
 class Admission(commands.Cog, name="admission"):
     """Updating the lists of applicants"""
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+        credentials = {
+            "type": "service_account",
+            "project_id": os.environ['GOOGLE_PROJECT_ID'],
+            "private_key_id": os.environ["GOOGLE_PRIVATE_KEY_ID"],
+            "private_key": os.environ["GOOGLE_PRIVATE_KEY"].replace('\\n', '\n'),
+            "client_email": os.environ["GOOGLE_CLIENT_EMAIL"],
+            "client_id": os.environ["GOOGLE_CLIENT_ID"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": os.environ['GOOGLE_CLIENT_X509_CERT_URL']
+        }
+        service_account = gspread.service_account_from_dict(credentials)
+        self.spreadsheet = service_account.open("Поступление СПб")
 
     @staticmethod
     async def get_spbetu_lists(specialties):
@@ -61,13 +78,43 @@ class Admission(commands.Cog, name="admission"):
             table_body = soup.tbody
             applicants = []
             for tr in table_body.find_all('tr'):
-                applicant = []
-                for td in tr.find_all('td'):
-                    applicant.append(td.get_text().replace('\n', ''))
-                applicants.append(applicant)
-            applicants_tables[f'{speciality} ({code})'] = sorted(applicants, key=lambda x: int(x[4]), reverse=True)
+                tds = [td.get_text().replace('\n', '') for td in tr.find_all('td')]
+                applicants.append(tds[:6] + [tds[9]] + tds[6:9] + [tds[12]] + [tds[10]] + ['-', '-'])
+            applicants_tables[f'{code} {speciality}'] = sorted(applicants, key=lambda x: int(x[4]), reverse=True)
 
         return applicants_tables
+
+    async def upload_data(self, university, applicants_tables):
+        """Uploads the table to the main Google Spreadsheet
+
+        :param university: str - Name of the university (future name of the sheet in the table)
+        :param applicants_tables: dict - Tables of university applicants by specialties"""
+        # Get worksheet object (create new or get old one)
+        try:
+            worksheet = self.spreadsheet.add_worksheet(title=university, rows='1000', cols='500')
+        except gspread.exceptions.APIError:
+            worksheet = self.spreadsheet.worksheet(title=university)
+
+        # Main
+        for specialty, applicants in applicants_tables.items():
+            # Get current table range
+            try:
+                last_cell = worksheet.findall("№")[-1]
+                row0, col0 = 1, last_cell.col + 15
+            except IndexError:
+                row0, col0 = 1, 1
+            start = rowcol_to_a1(row0, col0)
+            end = rowcol_to_a1(row0 + 2 + len(applicants), col0 + 13)
+
+            # Prepare data
+            titles = [
+                '№', 'СНИЛС / Код', 'П', 'Условия', 'Σ общая', 'Σ ЕГЭ', 'Σ ИД',
+                'ЕГЭ 1', 'ЕГЭ 2', 'ЕГЭ 3', 'Согласие', 'ПП', 'ИД', 'Примечания'
+            ]
+            data = [[specialty] + [''] * 13, titles] + applicants
+
+            # Update table
+            worksheet.update(f"{start}:{end}", data)
 
 
 def setup(bot):
