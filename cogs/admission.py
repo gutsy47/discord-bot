@@ -96,13 +96,9 @@ class Admission(commands.Cog, name="admission"):
             worksheet = self.spreadsheet.worksheet(title=university)
 
         # Main
+        row0, col0 = 1, 1
         for specialty, applicants in applicants_tables.items():
             # Get current table range
-            try:
-                last_cell = worksheet.findall("№")[-1]
-                row0, col0 = 1, last_cell.col + 15
-            except IndexError:
-                row0, col0 = 1, 1
             start = rowcol_to_a1(row0, col0)
             end = rowcol_to_a1(row0 + 2 + len(applicants), col0 + 13)
 
@@ -115,6 +111,33 @@ class Admission(commands.Cog, name="admission"):
 
             # Update table
             worksheet.update(f"{start}:{end}", data)
+
+            # Update whole table format
+            worksheet.format(f"{start}:{end}", {
+                'textFormat': {'fontSize': 11},
+                'borders': {
+                    'top': {'style': 'SOLID', 'width': 1},
+                    'bottom': {'style': 'SOLID', 'width': 1},
+                    'left': {'style': 'SOLID', 'width': 1},
+                    'right': {'style': 'SOLID', 'width': 1}
+                },
+                'horizontalAlignment': 'CENTER',
+            })
+
+            # Update title format
+            title_range = f"{start}:{rowcol_to_a1(row0, col0 + 13)}"
+            worksheet.merge_cells(title_range, merge_type="MERGE_ALL")
+            worksheet.format(title_range, {'textFormat': {'fontSize': 13, 'bold': True}})
+
+            # Update header format
+            header_range = f"{rowcol_to_a1(row0 + 1, col0)}:{rowcol_to_a1(row0 + 1, col0 + 13)}"
+            worksheet.format(header_range, {'textFormat': {'fontSize': 12}})
+
+            # Auto resize whole table
+            worksheet.columns_auto_resize(col0, col0 + 13)
+
+            # Next start position
+            row0, col0 = 1, col0 + 15
 
 
 def setup(bot):
