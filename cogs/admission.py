@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 import requests
 import bs4
@@ -72,7 +72,7 @@ class Admission(commands.Cog, name="admission"):
             list_link = os.environ['SPBU_MAIN_URL'] + link.attrs['href'] if link.get_text() == "Госбюджетная" else None
             if is_full_time:
                 code = specialty[:8]
-                specialty = specialty + '\n' + profile
+                specialty = specialty + ' ' + profile
                 table_of_specialties.append([code, specialty, list_link])
 
         # Get tables of applicants by specialty
@@ -154,6 +154,7 @@ class Admission(commands.Cog, name="admission"):
             for tr in table_body.find_all('tr'):
                 tds = [td.get_text().replace('\n', '') for td in tr.find_all('td')]
                 applicants.append(tds[:6] + [tds[9]] + tds[6:9] + [tds[12]] + [tds[10]] + ['-', '-'])
+            specialty = code + ' ' + specialty
             applicants_tables[specialty] = self.sorted_applicants(applicants)
 
         return applicants_tables
@@ -212,6 +213,38 @@ class Admission(commands.Cog, name="admission"):
 
             # Next start position
             row0, col0 = 1, col0 + 15
+
+    @tasks.loop(hours=1)
+    async def applicants_table_updater(self, specialties):
+        """Updates table of applicants hourly
+
+        :param specialties: list of str - list of specialties
+        """
+        # Get tables
+        data = {
+            'СПбГЭТУ': await self.get_spbetu_lists(specialties),
+            'СПбГУ': await self.get_spbu_lists(specialties)
+        }
+
+        # Main
+        for university, applicants_tables in data.items():
+            # Error handler
+            if not isinstance(applicants_tables, dict):
+                continue
+
+            # Data upload
+            if applicants_tables:
+                await self.upload_data(university, applicants_tables)
+
+    @commands.command()
+    async def start_updater(self, ctx, *args):
+        self.applicants_table_updater.start(args)
+        embed = discord.Embed(
+            title="The table of applicants will be updated hourly",
+            description="Selected specialties:\n" + '\n'.join(args),
+            color=self.bot.ColorDefault
+        )
+        await ctx.send(embed=embed)
 
 
 def setup(bot):
