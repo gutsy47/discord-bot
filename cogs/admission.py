@@ -236,14 +236,84 @@ class Admission(commands.Cog, name="admission"):
             if applicants_tables:
                 await self.upload_data(university, applicants_tables)
 
-    @commands.command()
-    async def start_updater(self, ctx, *args):
-        self.applicants_table_updater.start(args)
+    @commands.command(
+        name="updater_start",
+        brief="Start applicants table hourly updater",
+        help=(
+                "Starts an automatic parser for websites of universities with specified specialties. "
+                "Update happens every hour "
+        ),
+        usage=[
+            ["specialties", "required", "Specialty codes separated by spaces"],
+        ]
+    )
+    async def updater_start(self, ctx, *args):
+        """
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param args: list of str - Specialty codes
+        """
+        # Empty specialties error handler
+        if not args:
+            raise commands.MissingRequiredArgument(args)
+
+        # Message send
         embed = discord.Embed(
             title="The table of applicants will be updated hourly",
-            description="Selected specialties:\n" + '\n'.join(args),
+            description="**Selected specialties:**\n" + '\n'.join(args),
             color=self.bot.ColorDefault
         )
+        await ctx.send(embed=embed)
+
+        # Task start
+        self.applicants_table_updater.start(args)
+
+    @commands.command(
+        name="updater_stop",
+        brief="Stop applicants table hourly updater",
+        help=(
+                "Stops an automatic parser for websites of universities with specified specialties. "
+                "Completion occurs at the end of the current loop, if one is started"
+        ),
+        usage=[]
+    )
+    async def updater_stop(self, ctx):
+        """
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        """
+        # Message send
+        embed = discord.Embed(
+            title="Completion at the end of an iteration",
+            description="**Total updates:** " + str(self.applicants_table_updater.current_loop),
+            color=self.bot.ColorDefault
+        )
+        await ctx.send(embed=embed)
+
+        # Gracefully stop the task
+        self.applicants_table_updater.stop()
+
+    @commands.command(
+        name="updater_check",
+        brief="Check if the loop is running",
+        help=(
+                "Checks the loop for running tasks and returns a response message "
+        ),
+        usage=[
+            ["specialties", "required", "Specialty codes separated by spaces"],
+        ]
+    )
+    async def updater_check(self, ctx):
+        """
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        """
+        embed = discord.Embed(
+            description=f"Loop **is{' ' if self.applicants_table_updater.is_running() else ' not '}**running",
+            color=self.bot.ColorDefault
+        )
+        # Data for developers
+        embed.description += "\nCurrent task (for developers): \n||"
+        embed.description += str(self.applicants_table_updater.get_task()) + "||"
+
+        # Message send
         await ctx.send(embed=embed)
 
 
