@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import discord
 from discord.ext import commands
 import os
 import requests
@@ -31,7 +32,80 @@ class Admission(commands.Cog, name="admission"):
         self.spreadsheet = service_account.open("Поступление СПб")
 
     @staticmethod
-    async def get_spbetu_lists(specialties):
+    def sorted_applicants(applicants):
+        """Returns custom-sorted table of applicants
+
+        :param applicants: list of strings - list of applicants' data
+        :return: list - custom-sorted list
+        """
+        sort_order = {'БВИ': 0, 'ПП': 1, 'ВК': 2, 'ЦК': 3, 'ОК': 4, 'К': 5}
+
+        applicants.sort(key=lambda x: int(float(x[4])), reverse=True)
+        applicants.sort(key=lambda x: sort_order[x[3]])
+
+        return applicants
+
+    async def get_spbu_lists(self, specialties):
+        """Returns lists of applicants grouped by specialties
+
+        :param specialties: list of strings - list of specialty codes
+        :return: dict - {specialty: [[row], [row]]}
+        """
+        # Format error handler
+        for specialty in specialties:
+            if not fullmatch(r'\d\d[.]\d\d[.]\d\d', specialty):
+                return RuntimeError(f"The **{specialty}** specialty has the wrong format")
+
+        # Get soup
+        response = requests.get(os.environ['SPBU_MAIN_LISTS_URL'])
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'lxml')
+
+        # Get table of specialties
+        table_of_specialties = []
+        h3_list = soup.find_all('h3')
+        for h3 in h3_list:
+            specialty = h3.next_element
+            profile = list(specialty.next_elements)[2]
+            is_full_time = True if list(profile.next_elements)[2].get_text() == "Форма обучения: очная" else False
+            link = list(profile.next_elements)[6]
+            list_link = os.environ['SPBU_MAIN_URL'] + link.attrs['href'] if link.get_text() == "Госбюджетная" else None
+            if is_full_time:
+                code = specialty[:8]
+                specialty = specialty + '\n' + profile
+                table_of_specialties.append([code, specialty, list_link])
+
+        # Get tables of applicants by specialty
+        applicants_tables = {}
+        types_of_conditions = {
+            'Без ВИ': 'БВИ',
+            'По результатам ВИ': 'ОК'
+        }
+        for row in table_of_specialties:
+            code, specialty, applicants_table_link = row
+
+            if applicants_table_link is None:
+                continue
+            if code not in specialties:
+                continue
+
+            response = requests.get(applicants_table_link)
+            response.encoding = 'utf-8'
+            soup = BeautifulSoup(response.text, 'lxml')
+
+            table_body = soup.tbody
+            applicants = []
+            for tr in table_body.find_all('tr'):
+                tds = [td.get_text() for td in tr.find_all('td')]
+                exams = [x.strip().replace(',', '.') if x.strip() else '0' for x in tds[4:6] + [tds[9]] + tds[6:9]]
+                conditions = types_of_conditions[tds[2]]
+                applicants.append(tds[:2] + [tds[3]] + [conditions] + exams + [tds[10]] + ['-'] + tds[11:13])
+
+            applicants_tables[specialty] = self.sorted_applicants(applicants)
+
+        return applicants_tables
+
+    async def get_spbetu_lists(self, specialties):
         """Returns lists of applicants grouped by specialties
 
         :param specialties: list of strings - list of specialty codes
@@ -56,18 +130,18 @@ class Admission(commands.Cog, name="admission"):
             row = td.find_all('td')
 
             code = row[0].get_text()
-            speciality = row[1].get_text().replace('\t', '').replace('\r', '').replace('\n', '')
+            specialty = row[1].get_text().replace('\t', '').replace('\r', '').replace('\n', '')
             try:
                 applicants_table_link = os.environ['ETU_MAIN_URL'] + row[2].contents[0].attrs['href']
             except AttributeError:
                 applicants_table_link = 'N/A'
 
-            table_of_specialties.append([code, speciality, applicants_table_link])
+            table_of_specialties.append([code, specialty, applicants_table_link])
 
         # Get tables of applicants by specialty
         applicants_tables = {}
         for row in table_of_specialties:
-            code, speciality, applicants_table_link = row
+            code, specialty, applicants_table_link = row
 
             if code not in specialties:
                 continue
@@ -80,7 +154,7 @@ class Admission(commands.Cog, name="admission"):
             for tr in table_body.find_all('tr'):
                 tds = [td.get_text().replace('\n', '') for td in tr.find_all('td')]
                 applicants.append(tds[:6] + [tds[9]] + tds[6:9] + [tds[12]] + [tds[10]] + ['-', '-'])
-            applicants_tables[f'{code} {speciality}'] = sorted(applicants, key=lambda x: int(x[4]), reverse=True)
+            applicants_tables[specialty] = self.sorted_applicants(applicants)
 
         return applicants_tables
 
@@ -91,7 +165,7 @@ class Admission(commands.Cog, name="admission"):
         :param applicants_tables: dict - Tables of university applicants by specialties"""
         # Get worksheet object (create new or get old one)
         try:
-            worksheet = self.spreadsheet.add_worksheet(title=university, rows='1000', cols='500')
+            worksheet = self.spreadsheet.add_worksheet(title=university, rows='500', cols='500')
         except gspread.exceptions.APIError:
             worksheet = self.spreadsheet.worksheet(title=university)
 
@@ -100,7 +174,7 @@ class Admission(commands.Cog, name="admission"):
         for specialty, applicants in applicants_tables.items():
             # Get current table range
             start = rowcol_to_a1(row0, col0)
-            end = rowcol_to_a1(row0 + 2 + len(applicants), col0 + 13)
+            end = rowcol_to_a1(row0 + 1 + len(applicants), col0 + 13)
 
             # Prepare data
             titles = [
