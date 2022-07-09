@@ -32,20 +32,7 @@ class Admission(commands.Cog, name="admission"):
         self.spreadsheet = service_account.open("Поступление СПб")
 
     @staticmethod
-    def sorted_applicants(applicants):
-        """Returns custom-sorted table of applicants
-
-        :param applicants: list of strings - list of applicants' data
-        :return: list - custom-sorted list
-        """
-        sort_order = {'БВИ': 0, 'ПП': 1, 'ВК': 2, 'ЦК': 3, 'ОК': 4, 'К': 5}
-
-        applicants.sort(key=lambda x: int(float(x[4])), reverse=True)
-        applicants.sort(key=lambda x: sort_order[x[3]])
-
-        return applicants
-
-    async def get_spbu_lists(self, specialties):
+    async def get_spbu_lists(specialties):
         """Returns lists of applicants grouped by specialties
 
         :param specialties: list of strings - list of specialty codes
@@ -101,11 +88,12 @@ class Admission(commands.Cog, name="admission"):
                 conditions = types_of_conditions[tds[2]]
                 applicants.append(tds[:2] + [tds[3]] + [conditions] + exams + [tds[10]] + ['-'] + tds[11:13])
 
-            applicants_tables[specialty] = self.sorted_applicants(applicants)
+            applicants_tables[specialty] = applicants
 
         return applicants_tables
 
-    async def get_spbetu_lists(self, specialties):
+    @staticmethod
+    async def get_spbetu_lists(specialties):
         """Returns lists of applicants grouped by specialties
 
         :param specialties: list of strings - list of specialty codes
@@ -155,7 +143,7 @@ class Admission(commands.Cog, name="admission"):
                 tds = [td.get_text().replace('\n', '') for td in tr.find_all('td')]
                 applicants.append(tds[:6] + [tds[9]] + tds[6:9] + [tds[12]] + [tds[10]] + ['-', '-'])
             specialty = code + ' ' + specialty
-            applicants_tables[specialty] = self.sorted_applicants(applicants)
+            applicants_tables[specialty] = applicants
 
         return applicants_tables
 
