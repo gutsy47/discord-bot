@@ -294,7 +294,8 @@ class Admission(commands.Cog, name="admission"):
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
         """
         embed = discord.Embed(
-            description=f"Loop **is{' ' if self.applicants_table_updater.is_running() else ' not '}**running",
+            title=f"Loop is{' ' if self.applicants_table_updater.is_running() else ' not '}running",
+            description="**Total updates:** " + str(self.applicants_table_updater.current_loop),
             color=self.bot.ColorDefault
         )
         # Data for developers
