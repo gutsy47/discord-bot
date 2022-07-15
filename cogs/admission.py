@@ -9,6 +9,8 @@ from bs4 import BeautifulSoup
 from re import fullmatch
 import gspread
 from gspread.utils import rowcol_to_a1
+import psycopg2
+from urllib.parse import urlparse
 
 
 class Admission(commands.Cog, name="admission"):
@@ -16,6 +18,7 @@ class Admission(commands.Cog, name="admission"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+        # Google Spread connection
         credentials = {
             "type": "service_account",
             "project_id": os.environ['GOOGLE_PROJECT_ID'],
@@ -31,6 +34,18 @@ class Admission(commands.Cog, name="admission"):
         service_account = gspread.service_account_from_dict(credentials)
         self.spreadsheet = service_account.open("Поступление СПб")
 
+        # Postgres connection
+        result = urlparse(os.environ['DATABASE_URL'])
+        with psycopg2.connect(
+                dbname=result.path[1:],
+                user=result.username,
+                password=result.password,
+                host=result.hostname,
+                port=result.port
+        ) as connection:
+            connection.autocommit = True
+            self.cursor = connection.cursor()
+
     @staticmethod
     async def get_spbu_lists(specialties):
         """Returns lists of applicants grouped by specialties
@@ -38,11 +53,6 @@ class Admission(commands.Cog, name="admission"):
         :param specialties: list of strings - list of specialty codes
         :return: dict - {specialty: [[row], [row]]}
         """
-        # Format error handler
-        for specialty in specialties:
-            if not fullmatch(r'\d\d[.]\d\d[.]\d\d', specialty):
-                return RuntimeError(f"The **{specialty}** specialty has the wrong format")
-
         # Get soup
         response = requests.get(os.environ['SPBU_MAIN_LISTS_URL'])
         response.encoding = 'utf-8'
@@ -99,11 +109,6 @@ class Admission(commands.Cog, name="admission"):
         :param specialties: list of strings - list of specialty codes
         :return: dict - {specialty: [[row], [row]]}
         """
-        # Format error handler
-        for specialty in specialties:
-            if not fullmatch(r'\d\d[.]\d\d[.]\d\d', specialty):
-                return RuntimeError(f"The **{specialty}** specialty has the wrong format")
-
         # Get soup
         response = requests.get(os.environ['ETU_MAIN_LISTS_URL'])
         soup = BeautifulSoup(response.text, 'lxml')
@@ -209,10 +214,11 @@ class Admission(commands.Cog, name="admission"):
         :param specialties: list of str - list of specialties
         """
         # Get tables
-        data = {
-            'СПбГЭТУ': await self.get_spbetu_lists(specialties),
-            'СПбГУ': await self.get_spbu_lists(specialties)
-        }
+        data = {}
+        if 'СПбГЭТУ' in specialties.keys():
+            data['СПбГЭТУ'] = await self.get_spbetu_lists(specialties['СПбГЭТУ'])
+        if 'СПбГУ' in specialties.keys():
+            data['СПбГУ'] = await self.get_spbetu_lists(specialties['СПбГУ'])
 
         # Main
         for university, applicants_tables in data.items():
@@ -224,36 +230,140 @@ class Admission(commands.Cog, name="admission"):
             if applicants_tables:
                 await self.upload_data(university, applicants_tables)
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Get university-specialty pairs from database
+        self.cursor.execute("SELECT * FROM specialty_upload;")
+        specialties = {}
+        for key, value in self.cursor.fetchall():
+            if key in specialties.keys():
+                specialties[key].append(value)
+            else:
+                specialties[key] = [value]
+
+        # Updater start (Start if the database contains at least one specialty that needs to be updated else do nothing)
+        if specialties:
+            self.applicants_table_updater.start(specialties)
+
     @commands.command(
-        name="updater_start",
-        brief="Start applicants table hourly updater",
+        name="updater_add",
+        brief="Add new specialties to updater",
         help=(
-                "Starts an automatic parser for websites of universities with specified specialties. "
-                "Update happens every hour "
+                "Adds to the list of checked specialties at the university new ones that you specified"
         ),
         usage=[
-            ["specialties", "required", "Specialty codes separated by spaces"],
+            ["university", "required", "University name (Case sensitive)"],
+            ["specialties", "required", "Specialty codes (space-separated)"]
         ]
     )
-    async def updater_start(self, ctx, *args):
+    async def updater_add(self, ctx, university, *args):
         """
         :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
-        :param args: list of str - Specialty codes
+        :param university: str - University name or * (all universities)
+        :param args: tuple of str - Specialty codes or * (all specialties)
         """
         # Empty specialties error handler
         if not args:
-            raise commands.MissingRequiredArgument(args)
+            raise commands.BadArgument(f"**specialties** is a required argument that is missing")
+
+        # Specialties format error handler
+        for specialty in args:
+            if not fullmatch(r'\d\d[.]\d\d[.]\d\d', specialty):
+                raise commands.BadArgument(f"The **{specialty}** specialty has the wrong format")
+
+        # Database update
+        for specialty in args:
+            try:
+                self.cursor.execute("INSERT INTO specialty_upload VALUES (%s, %s);", (university, specialty))
+            except psycopg2.errors.UniqueViolation:
+                continue
+
+        # Get university-specialty pairs from database
+        self.cursor.execute("SELECT * FROM specialty_upload;")
+        specialties = {}
+        for key, value in self.cursor.fetchall():
+            if key in specialties.keys():
+                specialties[key].append(value)
+            else:
+                specialties[key] = [value]
+
+        # Updater start or restart
+        if self.applicants_table_updater.is_running():
+            self.applicants_table_updater.restart(specialties)
+        else:
+            self.applicants_table_updater.start(specialties)
 
         # Message send
-        embed = discord.Embed(
-            title="The table of applicants will be updated hourly",
-            description="**Selected specialties:**\n" + '\n'.join(args),
-            color=self.bot.ColorDefault
-        )
+        embed = discord.Embed(title="Successfully added!", color=self.bot.ColorDefault)
+        embed.description = f"These lists will be updated in the table of the **{university}**:\n"
+        embed.description += '\n'.join(args)
         await ctx.send(embed=embed)
 
-        # Task start
-        self.applicants_table_updater.start(args)
+    @commands.command(
+        name="updater_delete",
+        brief="Delete specialties from updater",
+        help=(
+                "Removes the specified specialties from the list of updated"
+        ),
+        usage=[
+            ["university", "required", "University name (Case sensitive) or '*' (All)"],
+            ["specialties", "required", "Specialty codes (space-separated) or '*' (All)"]
+        ]
+    )
+    async def updater_delete(self, ctx, university, *args):
+        """
+        :param ctx: discord.ext.commands.Context - Represents the context in which a command is being invoked under
+        :param university: str - University name or * (all universities)
+        :param args: tuple of str - Specialty codes or * (all specialties)
+        """
+        # Empty specialties error handler:
+        if not args:
+            raise commands.BadArgument(f"**specialties** is a required argument that is missing")
+
+        # Specialties format error handler
+        if '*' not in args:
+            for specialty in args:
+                if not fullmatch(r'\d\d[.]\d\d[.]\d\d', specialty):
+                    raise commands.BadArgument(f"The **{specialty}** specialty has the wrong format")
+
+        # Database update
+        if '*' in args:
+            if university == '*':
+                self.cursor.execute("DELETE FROM specialty_upload;")
+            else:
+                self.cursor.execute("DELETE FROM specialty_upload WHERE university_name=%s;", (university, ))
+        else:
+            for specialty in args:
+                if university == '*':
+                    self.cursor.execute("DELETE FROM specialty_upload WHERE specialty_code=%s;", (specialty, ))
+                else:
+                    self.cursor.execute(
+                        "DELETE FROM specialty_upload WHERE university_name=%s AND specialty_code=%s;",
+                        (university, specialty)
+                    )
+
+        # Get university-specialty pairs from database
+        self.cursor.execute("SELECT * FROM specialty_upload;")
+        specialties = {}
+        for key, value in self.cursor.fetchall():
+            if key in specialties.keys():
+                specialties[key].append(value)
+            else:
+                specialties[key] = [value]
+
+        # Updater stop or restart
+        if specialties:
+            self.applicants_table_updater.restart(specialties)
+        else:
+            self.applicants_table_updater.stop()
+
+        # Message send
+        embed = discord.Embed(title="Successfully deleted!", color=self.bot.ColorDefault)
+        university = 'all universities' if university == '*' else university
+        embed.description = f"These lists have been deleted from **{university}**:\n"
+        args = 'all specialties' if args == '*' else args
+        embed.description += '\n'.join(args)
+        await ctx.send(embed=embed)
 
     @commands.command(
         name="updater_stop",
@@ -285,9 +395,7 @@ class Admission(commands.Cog, name="admission"):
         help=(
                 "Checks the loop for running tasks and returns a response message "
         ),
-        usage=[
-            ["specialties", "required", "Specialty codes separated by spaces"],
-        ]
+        usage=[]
     )
     async def updater_check(self, ctx):
         """
