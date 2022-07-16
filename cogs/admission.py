@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import asyncio
 import discord
 from discord.ext import commands, tasks
 import os
@@ -165,44 +166,49 @@ class Admission(commands.Cog, name="admission"):
 
         # Main
         row0, col0 = 1, 1
+        titles = [
+            '№', 'СНИЛС / Код', 'Приоритет', 'Условия', 'Σ общая', 'Σ ЕГЭ', 'Σ ИД',
+            'ЕГЭ 1', 'ЕГЭ 2', 'ЕГЭ 3', 'Согласие', 'ПП', 'ИД', 'Примечания'
+        ]
         for specialty, applicants in applicants_tables.items():
             # Get current table range
             start = rowcol_to_a1(row0, col0)
             end = rowcol_to_a1(row0 + 1 + len(applicants), col0 + 13)
 
-            # Prepare data
-            titles = [
-                '№', 'СНИЛС / Код', 'П', 'Условия', 'Σ общая', 'Σ ЕГЭ', 'Σ ИД',
-                'ЕГЭ 1', 'ЕГЭ 2', 'ЕГЭ 3', 'Согласие', 'ПП', 'ИД', 'Примечания'
-            ]
+            # GSpread data updater, cycle breaks after 1st successful completion
             data = [[specialty] + [''] * 13, titles] + applicants
+            while True:
+                try:
+                    # Update table
+                    worksheet.update(f"{start}:{end}", data)
 
-            # Update table
-            worksheet.update(f"{start}:{end}", data)
+                    # Update whole table format
+                    worksheet.format(f"{start}:{end}", {
+                        'textFormat': {'fontSize': 11},
+                        'borders': {
+                            'top': {'style': 'SOLID', 'width': 1},
+                            'bottom': {'style': 'SOLID', 'width': 1},
+                            'left': {'style': 'SOLID', 'width': 1},
+                            'right': {'style': 'SOLID', 'width': 1}
+                        },
+                        'horizontalAlignment': 'CENTER',
+                    })
 
-            # Update whole table format
-            worksheet.format(f"{start}:{end}", {
-                'textFormat': {'fontSize': 11},
-                'borders': {
-                    'top': {'style': 'SOLID', 'width': 1},
-                    'bottom': {'style': 'SOLID', 'width': 1},
-                    'left': {'style': 'SOLID', 'width': 1},
-                    'right': {'style': 'SOLID', 'width': 1}
-                },
-                'horizontalAlignment': 'CENTER',
-            })
+                    # Update title format
+                    title_range = f"{start}:{rowcol_to_a1(row0, col0 + 13)}"
+                    worksheet.merge_cells(title_range, merge_type="MERGE_ALL")
+                    worksheet.format(title_range, {'textFormat': {'fontSize': 13, 'bold': True}})
 
-            # Update title format
-            title_range = f"{start}:{rowcol_to_a1(row0, col0 + 13)}"
-            worksheet.merge_cells(title_range, merge_type="MERGE_ALL")
-            worksheet.format(title_range, {'textFormat': {'fontSize': 13, 'bold': True}})
+                    # Update header format
+                    header_range = f"{rowcol_to_a1(row0 + 1, col0)}:{rowcol_to_a1(row0 + 1, col0 + 13)}"
+                    worksheet.format(header_range, {'textFormat': {'fontSize': 12}})
 
-            # Update header format
-            header_range = f"{rowcol_to_a1(row0 + 1, col0)}:{rowcol_to_a1(row0 + 1, col0 + 13)}"
-            worksheet.format(header_range, {'textFormat': {'fontSize': 12}})
-
-            # Auto resize whole table
-            worksheet.columns_auto_resize(col0, col0 + 13)
+                    # Auto resize whole table
+                    worksheet.columns_auto_resize(col0, col0 + 13)
+                except gspread.exceptions.APIError:
+                    await asyncio.sleep(delay=60)
+                else:
+                    break
 
             # Next start position
             row0, col0 = 1, col0 + 15
@@ -218,7 +224,7 @@ class Admission(commands.Cog, name="admission"):
         if 'СПбГЭТУ' in specialties.keys():
             data['СПбГЭТУ'] = await self.get_spbetu_lists(specialties['СПбГЭТУ'])
         if 'СПбГУ' in specialties.keys():
-            data['СПбГУ'] = await self.get_spbetu_lists(specialties['СПбГУ'])
+            data['СПбГУ'] = await self.get_spbu_lists(specialties['СПбГУ'])
 
         # Main
         for university, applicants_tables in data.items():
