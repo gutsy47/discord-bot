@@ -259,6 +259,10 @@ class School(commands.Cog, name="school"):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Check if task is already launched
+        if self.schedule_distribution.is_running():
+            return
+
         self.schedule_distribution.start()
         self.weekly_homework_distribution.start()
 

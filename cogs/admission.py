@@ -12,6 +12,12 @@ import gspread
 from gspread.utils import rowcol_to_a1
 import psycopg2
 from urllib.parse import urlparse
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
+from datetime import datetime
 
 
 class Admission(commands.Cog, name="admission"):
@@ -153,14 +159,67 @@ class Admission(commands.Cog, name="admission"):
 
         return applicants_tables
 
-    async def upload_data(self, university, applicants_tables):
+    @staticmethod
+    async def get_itmo_lists(specialties):
+        """Returns lists of applicants grouped by specialties
+
+        :param specialties: list of strings - list of specialty codes
+        :return: dict - {specialty: [[row], [row]]}
+        """
+        # Starting web driver
+        options = webdriver.ChromeOptions()
+        options.add_argument("--headless")
+
+        driver = webdriver.Chrome(service=Service("webdriver/chromedriver.exe"), options=options)
+        driver.set_window_size(1920, 1080)
+
+        # Get links for tables of applicants using selenium web driver
+        driver.get("https://abit.itmo.ru/ratings/bachelor")
+        driver.find_element(By.ID, 'tabs-tab-1').click()
+        link_containers = driver.find_elements(By.XPATH, '//*[@id="tabs-tabpane-1"]/div[3]//div/a')
+        links = [container.get_attribute('href') for container in link_containers]
+
+        # Get tables of applicants data
+        applicants_tables = {}
+        for link in links:
+            driver.get(link)
+            # Get all rows
+            try:
+                table = WebDriverWait(driver, 10).until(
+                    lambda x: x.find_elements(By.XPATH, '//*[@id="__next"]/div/main/div[2]/div/div/div/div[2]/div')
+                )
+            except TimeoutException:
+                continue
+
+            # Get specialty name with code
+            specialty = driver.find_element(By.XPATH, '//*[@id="__next"]/div/main/div[2]/div/div/div/h2').text.lower()
+            if specialty.split()[0] not in specialties:
+                continue
+
+            # Get each row data
+            applicants = []
+            for content in table:
+                row = content.text.split('\n')
+                similar = row[2:4] + row[-3:-5:-1] + row[4:7] + [row[-5]] + [row[-2]]
+                similar = [text.split()[-1] for text in similar]
+                exams_score = str(int(similar[2]) - int(similar[3]))
+                row = [row[0].split()[0]] + [row[1]] + similar[0:3] + [exams_score] + similar[3:] + ['-', '-']
+                applicants.append(row)
+            applicants_tables[specialty] = applicants
+
+        # Close web driver and return tables
+        driver.quit()
+        return applicants_tables
+
+    async def upload_data(self, university, applicants_tables, update_time: datetime):
         """Uploads the table to the main Google Spreadsheet
 
         :param university: str - Name of the university (future name of the sheet in the table)
-        :param applicants_tables: dict - Tables of university applicants by specialties"""
+        :param applicants_tables: dict - Tables of university applicants by specialties
+        :param update_time: datetime - Time of last update"""
         # Get worksheet object (create new or get old one)
         try:
-            worksheet = self.spreadsheet.add_worksheet(title=university, rows='500', cols='500')
+            worksheet = self.spreadsheet.add_worksheet(title=university, rows='2000', cols='500')
         except gspread.exceptions.APIError:
             worksheet = self.spreadsheet.worksheet(title=university)
 
@@ -212,8 +271,9 @@ class Admission(commands.Cog, name="admission"):
 
             # Next start position
             row0, col0 = 1, col0 + 15
+        worksheet.update('O1:O2', [['Обновлено'], [update_time.strftime('%H:%M %d.%m.%y')]])
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=30)
     async def applicants_table_updater(self, specialties):
         """Updates table of applicants hourly
 
@@ -225,6 +285,9 @@ class Admission(commands.Cog, name="admission"):
             data['СПбГЭТУ'] = await self.get_spbetu_lists(specialties['СПбГЭТУ'])
         if 'СПбГУ' in specialties.keys():
             data['СПбГУ'] = await self.get_spbu_lists(specialties['СПбГУ'])
+        if 'ИТМО' in specialties.keys():
+            data['ИТМО'] = await self.get_itmo_lists(specialties['ИТМО'])
+        update_time = datetime.now()
 
         # Main
         for university, applicants_tables in data.items():
@@ -234,10 +297,14 @@ class Admission(commands.Cog, name="admission"):
 
             # Data upload
             if applicants_tables:
-                await self.upload_data(university, applicants_tables)
+                await self.upload_data(university, applicants_tables, update_time)
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Check if task is already launched
+        if self.applicants_table_updater.is_running():
+            return
+
         # Get university-specialty pairs from database
         self.cursor.execute("SELECT * FROM specialty_upload;")
         specialties = {}
@@ -283,6 +350,8 @@ class Admission(commands.Cog, name="admission"):
                 self.cursor.execute("INSERT INTO specialty_upload VALUES (%s, %s);", (university, specialty))
             except psycopg2.errors.UniqueViolation:
                 continue
+            except psycopg2.errors.ForeignKeyViolation:
+                raise commands.BadArgument(f"**{university}** is a wrong university name")
 
         # Get university-specialty pairs from database
         self.cursor.execute("SELECT * FROM specialty_upload;")
