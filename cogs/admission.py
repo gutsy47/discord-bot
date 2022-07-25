@@ -168,13 +168,16 @@ class Admission(commands.Cog, name="admission"):
         """
         # Starting web driver
         options = webdriver.ChromeOptions()
+        options.binary_location = os.environ['GOOGLE_CHROME_BIN']
+        options.add_argument("window-size=1920x1080")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--no-sandbox")
         options.add_argument("--headless")
 
-        driver = webdriver.Chrome(service=Service("webdriver/chromedriver.exe"), options=options)
-        driver.set_window_size(1920, 1080)
+        driver = webdriver.Chrome(service=Service(os.environ['CHROMEDRIVER_PATH']), options=options)
 
         # Get links for tables of applicants using selenium web driver
-        driver.get("https://abit.itmo.ru/ratings/bachelor")
+        driver.get(os.environ['ITMO_MAIN_URL'])
         driver.find_element(By.ID, 'tabs-tab-1').click()
         link_containers = driver.find_elements(By.XPATH, '//*[@id="tabs-tabpane-1"]/div[3]//div/a')
         links = [container.get_attribute('href') for container in link_containers]
