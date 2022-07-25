@@ -17,7 +17,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 
 class Admission(commands.Cog, name="admission"):
@@ -290,6 +290,8 @@ class Admission(commands.Cog, name="admission"):
             data['СПбГУ'] = await self.get_spbu_lists(specialties['СПбГУ'])
         if 'ИТМО' in specialties.keys():
             data['ИТМО'] = await self.get_itmo_lists(specialties['ИТМО'])
+
+        timezone(timedelta(hours=3), name='МСК')
         update_time = datetime.now()
 
         # Main
